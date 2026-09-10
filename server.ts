@@ -4,6 +4,7 @@ import fs from "fs";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import multer from "multer";
+import sharp from "sharp";
 
 dotenv.config();
 
@@ -191,6 +192,48 @@ app.get("/.well-known/assetlinks.json", (_req: Request, res: Response) => {
 
 // Explicitly serve public static assets (manifest.json, icons, sw.js)
 app.use(express.static(path.join(process.cwd(), "public")));
+
+// Upload & resize official original logo without distortion
+app.post("/api/upload-app-logo", upload.single("logo"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file provided" });
+    }
+    const publicDir = path.join(process.cwd(), "public");
+    const buffer = req.file.buffer;
+
+    // Save exact original file as 1.png
+    fs.writeFileSync(path.join(publicDir, "1.png"), buffer);
+
+    // Resize to 512x512 keeping exact original aspect ratio and resolution
+    await sharp(buffer)
+      .resize(512, 512, {
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      })
+      .png()
+      .toFile(path.join(publicDir, "logo-app-512.png"));
+
+    // Resize to 192x192
+    await sharp(buffer)
+      .resize(192, 192, {
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      })
+      .png()
+      .toFile(path.join(publicDir, "logo-app-192.png"));
+
+    // Keep legacy fallback names synced
+    fs.copyFileSync(path.join(publicDir, "logo-app-512.png"), path.join(publicDir, "icon-512.png"));
+    fs.copyFileSync(path.join(publicDir, "logo-app-192.png"), path.join(publicDir, "icon-192.png"));
+
+    console.log("Original logo uploaded and resized to 512x512 & 192x192 with original aspect ratio!");
+    return res.json({ success: true, message: "Logo processed successfully" });
+  } catch (err: any) {
+    console.error("Error processing uploaded logo:", err);
+    return res.status(500).json({ error: err.message || "Failed to process logo" });
+  }
+});
 
 // Admin video moderation endpoint stubs
 app.post("/api/admin/videos/approve", (req: Request, res: Response) => {
