@@ -183,6 +183,7 @@ app.get("/.well-known/assetlinks.json", (_req: Request, res: Response) => {
         namespace: "android_app",
         package_name: "com.bundelitube.app",
         sha256_cert_fingerprints: [
+          "00:1F:A0:DF:73:3C:65:20:79:A6:9A:F3:B9:A9:54:79:5C:51:81:37:0B:FE:A4:CB:AB:46:C2:03:E4:B6:09:E8",
           "14:6D:E9:7D:0C:6D:E1:9E:BE:E2:DF:D6:DF:8C:77:4A:2A:B2:D6:1B:6F:4D:42:0E:6D:68:57:3E:12:F1:C9:49"
         ]
       }
