@@ -252,7 +252,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Center-Right: Desktop/Tablet Search Bar + Mic Voice Search Button */}
-            <div className="hidden md:flex flex-1 max-w-2xl ml-auto mr-4 lg:mr-8 items-center justify-end gap-3">
+            <div className="hidden lg:flex flex-1 max-w-2xl ml-auto mr-4 lg:mr-8 items-center justify-end gap-3">
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -337,17 +337,17 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Mobile Search Toggle Icon Button */}
               <button
                 onClick={() => setIsMobileSearchOpen(true)}
-                className={`md:hidden p-2 rounded-full ${isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'} transition cursor-pointer`}
+                className={`lg:hidden p-2 rounded-full ${isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'} transition cursor-pointer`}
                 title={t.searchBtn}
               >
                 <Search className="w-5 h-5" />
               </button>
 
-              {/* Create / Upload (+) Button - PC */}
+              {/* Create / Upload (+) Button - PC only */}
               <button
                 type="button"
                 onClick={onOpenUploadModal}
-                className={`hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-full ${
+                className={`hidden lg:flex items-center gap-1.5 px-3.5 py-1.5 rounded-full ${
                   isLight 
                     ? 'bg-slate-100 hover:bg-slate-200 text-slate-900 font-semibold' 
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold'
@@ -372,7 +372,7 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* User Profile Dropdown (YouTube Standard Clean Avatar Menu) - Hidden on Mobile, Visible on PC */}
               {currentUser ? (
-                <div className="hidden md:block relative shrink-0" ref={profileRef}>
+                <div className="hidden lg:block relative shrink-0" ref={profileRef}>
                   <button
                     type="button"
                     onClick={() => setShowProfileMenu(prev => !prev)}
@@ -620,7 +620,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={onOpenLoginModal}
-                  className="hidden md:flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-sm transition active:scale-95 cursor-pointer shrink-0"
+                  className="hidden lg:flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-sm transition active:scale-95 cursor-pointer shrink-0"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   <span>{language === 'hi' ? 'साइन इन' : 'Sign In'}</span>
