@@ -1,0 +1,238 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with Google Authentication identity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 120 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["viewer", "creator", "admin"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "ChannelSubmission": {
+      "title": "ChannelSubmission",
+      "description": "Creator KYC and channel verification application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ownerUid": { "type": "string", "maxLength": 128 },
+        "channelName": { "type": "string", "maxLength": 100 },
+        "verifiedEmail": { "type": "string", "maxLength": 120 },
+        "mobileNumber": { "type": "string", "maxLength": 15 },
+        "aadhaarNumber": { "type": "string", "maxLength": 20 },
+        "aadhaarPhotoUrl": { "type": "string", "maxLength": 500 },
+        "bankName": { "type": "string", "maxLength": 100 },
+        "accountHolder": { "type": "string", "maxLength": 100 },
+        "accountNumber": { "type": "string", "maxLength": 40 },
+        "ifscCode": { "type": "string", "maxLength": 20 },
+        "branchName": { "type": "string", "maxLength": 100 },
+        "upiId": { "type": "string", "maxLength": 80 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "ownerUid", "channelName", "verifiedEmail", "mobileNumber", "aadhaarNumber", "bankName", "accountHolder", "accountNumber", "ifscCode", "status"]
+    },
+    "VideoSubmission": {
+      "title": "VideoSubmission",
+      "description": "Creator YouTube video submission and ownership verification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "creatorUid": { "type": "string", "maxLength": 128 },
+        "channelId": { "type": "string", "maxLength": 128 },
+        "channelName": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 200 },
+        "youtubeUrl": { "type": "string", "maxLength": 300 },
+        "youtubeId": { "type": "string", "maxLength": 50 },
+        "category": { "type": "string", "maxLength": 50 },
+        "artist": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "thumbnailUrl": { "type": "string", "maxLength": 500 },
+        "verificationCode": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "creatorUid", "channelId", "title", "youtubeId", "category", "artist", "verificationCode", "status"]
+    },
+    "Wallet": {
+      "title": "Wallet",
+      "description": "Creator private earnings wallet",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ownerUid": { "type": "string", "maxLength": 128 },
+        "currentBalance": { "type": "number" },
+        "totalWithdrawn": { "type": "number" },
+        "lifetimeEarnings": { "type": "number" },
+        "minWithdrawalLimit": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "ownerUid", "currentBalance", "totalWithdrawn", "lifetimeEarnings"]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Creator withdrawal request requiring external admin review",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "creatorUid": { "type": "string", "maxLength": 128 },
+        "creatorName": { "type": "string", "maxLength": 100 },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["UPI", "Bank Transfer"] },
+        "targetAccount": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["pending", "completed", "rejected"] },
+        "createdAt": { "type": "string" },
+        "adminNotes": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["id", "creatorUid", "amount", "paymentMethod", "targetAccount", "status"]
+    },
+    "CopyrightReport": {
+      "title": "CopyrightReport",
+      "description": "User copyright claim or strike report for video",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "reporterUid": { "type": "string", "maxLength": 128 },
+        "reporterEmail": { "type": "string", "maxLength": 120 },
+        "videoId": { "type": "string", "maxLength": 128 },
+        "videoTitle": { "type": "string", "maxLength": 200 },
+        "claimType": { "type": "string", "enum": ["copyright_strike", "content_claim", "inappropriate_content", "fake_artist"] },
+        "claimDetails": { "type": "string", "maxLength": 2000 },
+        "originalWorkUrl": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "investigating", "resolved", "dismissed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "reporterUid", "videoId", "claimType", "claimDetails", "status"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global remote settings read by public app",
+      "type": "object",
+      "properties": {
+        "platformName": { "type": "string", "maxLength": 100 },
+        "tagline": { "type": "string", "maxLength": 200 },
+        "logoUrl": { "type": "string", "maxLength": 500 },
+        "maintenanceMode": { "type": "boolean" },
+        "announcementBanner": { "type": "string", "maxLength": 300 },
+        "withdrawalThreshold": { "type": "number" },
+        "creatorRevenuePercentage": { "type": "number" },
+        "adminRevenuePercentage": { "type": "number" }
+      }
+    },
+    "VideoLike": {
+      "title": "VideoLike",
+      "description": "Unique like record to prevent duplicate likes",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "videoId": { "type": "string", "maxLength": 128 },
+        "videoTitle": { "type": "string", "maxLength": 200 },
+        "channelId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "videoId", "createdAt"]
+    },
+    "ChannelSubscriber": {
+      "title": "ChannelSubscriber",
+      "description": "Unique subscription record linking subscriber to creator channel",
+      "type": "object",
+      "properties": {
+        "subscriberUserId": { "type": "string", "maxLength": 128 },
+        "creatorChannelId": { "type": "string", "maxLength": 128 },
+        "channelName": { "type": "string", "maxLength": 100 },
+        "subscriberName": { "type": "string", "maxLength": 100 },
+        "subscriberAvatar": { "type": "string", "maxLength": 500 },
+        "subscriberEmail": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["subscriberUserId", "creatorChannelId", "createdAt"]
+    },
+    "VideoView": {
+      "title": "VideoView",
+      "description": "Unique view record per session/user to prevent view count manipulation",
+      "type": "object",
+      "properties": {
+        "videoId": { "type": "string", "maxLength": 128 },
+        "viewerUserId": { "type": "string", "maxLength": 128 },
+        "viewerIp": { "type": "string", "maxLength": 60 },
+        "videoTitle": { "type": "string", "maxLength": 200 },
+        "creatorChannelId": { "type": "string", "maxLength": 128 },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["videoId", "timestamp"]
+    },
+    "VideoComment": {
+      "title": "VideoComment",
+      "description": "Viewer comments on videos with creator moderation, replies, and hearts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "videoId": { "type": "string", "maxLength": 128 },
+        "videoTitle": { "type": "string", "maxLength": 200 },
+        "creatorChannelId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "userAvatar": { "type": "string", "maxLength": 500 },
+        "text": { "type": "string", "maxLength": 2000 },
+        "likes": { "type": "number" },
+        "isHearted": { "type": "boolean" },
+        "isPinned": { "type": "boolean" },
+        "isQuestion": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "videoId", "userName", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with Google identity"
+    },
+    "/channel_submissions/{submissionId}": {
+      "schema": "ChannelSubmission",
+      "description": "Creator KYC and channel verification requests"
+    },
+    "/video_submissions/{submissionId}": {
+      "schema": "VideoSubmission",
+      "description": "Pending YouTube submissions with verification codes"
+    },
+    "/wallets/{walletId}": {
+      "schema": "Wallet",
+      "description": "Creator private earnings wallet"
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": "WithdrawalRequest",
+      "description": "Withdrawal requests above ₹5,000"
+    },
+    "/copyright_reports/{reportId}": {
+      "schema": "CopyrightReport",
+      "description": "Copyright dispute and strike reports"
+    },
+    "/app_settings/{settingId}": {
+      "schema": "AppSettings",
+      "description": "Public read-only remote app settings"
+    },
+    "/video_likes/{likeId}": {
+      "schema": "VideoLike",
+      "description": "Unique like documents preventing duplicate likes"
+    },
+    "/channel_subscribers/{subId}": {
+      "schema": "ChannelSubscriber",
+      "description": "Unique subscriber documents per user/channel"
+    },
+    "/video_views/{viewId}": {
+      "schema": "VideoView",
+      "description": "Verified unique views"
+    },
+    "/comments/{commentId}": {
+      "schema": "VideoComment",
+      "description": "Live comments with creator moderation"
+    }
+  }
+}

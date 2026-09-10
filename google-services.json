@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "909934015307",
+    "firebase_url": "https://bundelitube-1c045-default-rtdb.firebaseio.com",
+    "project_id": "bundelitube-1c045",
+    "storage_bucket": "bundelitube-1c045.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:909934015307:android:33e7ad2b35111694fbaece",
+        "android_client_info": {
+          "package_name": "com.bundelitube.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "909934015307-9lpj98jhm3bno1ip97viaahbface8f6n.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYj544FIsf5WjPKamqimxSoZRBUj-Mh1A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "909934015307-9lpj98jhm3bno1ip97viaahbface8f6n.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

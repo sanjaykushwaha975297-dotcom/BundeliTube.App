@@ -1,0 +1,214 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email in ['sanjaykushwaha975297@gmail.com', 'admin@bundelitube.com'] ||
+        request.auth.token.admin == true
+      );
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isAuthenticated() && (isOwner(userId) || isAdmin());
+    }
+
+    // Channel Submissions (KYC & Channel Applications)
+    match /channel_submissions/{submissionId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Live Channels Collection
+    match /channels/{channelId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Video Submissions (Moderation)
+    match /video_submissions/{submissionId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Live Videos Collection
+    match /videos/{videoId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Wallets & Transactions
+    match /wallets/{walletId} {
+      allow read, write: if true;
+    }
+    match /creator_wallets/{walletId} {
+      allow read, write: if true;
+    }
+    match /platform_wallets/{walletId} {
+      allow read, write: if true;
+    }
+    match /creators/{creatorId} {
+      allow read, write: if true;
+    }
+    match /revenue_transactions/{txId} {
+      allow read, write: if true;
+    }
+    match /banners/{bannerId} {
+      allow read, write: if true;
+    }
+
+    // Ad Revenue Distributions & Batches
+    match /ad_revenue_distributions/{batchId} {
+      allow read, write: if true;
+    }
+    match /ad_payout_batches/{batchId} {
+      allow read, write: if true;
+    }
+    match /ad_distribution_requests/{requestId} {
+      allow read, write: if true;
+    }
+    match /config/{configId} {
+      allow read, write: if true;
+    }
+
+    // Payout Requests (50% Creator Payouts)
+    match /payout_requests/{payoutId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Withdrawals
+    match /withdrawals/{withdrawalId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Promotions & Campaigns
+    match /promotions/{promotionId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Copyright Claims & Reports
+    match /copyright_reports/{reportId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Remote App Settings
+    match /app_settings/{settingId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Video Comments
+    match /comments/{commentId} {
+      allow read, write: if true;
+    }
+
+    // Video Likes & Dislikes (Unique Like Documents)
+    match /video_likes/{likeId} {
+      allow read, write: if true;
+    }
+
+    match /likes/{likeId} {
+      allow read, write: if true;
+    }
+
+    // Channel Subscriptions (Unique Subscription Documents)
+    match /channel_subscribers/{subId} {
+      allow read, write: if true;
+    }
+
+    match /subscriptions/{subId} {
+      allow read, write: if true;
+    }
+
+    // Video Views (Unique View Tracking)
+    match /video_views/{viewId} {
+      allow read, write: if true;
+    }
+
+    // User Watch History & Views
+    match /watch_history/{historyId} {
+      allow read, write: if true;
+    }
+
+    // User Activity Logs (All User/Viewer Actions)
+    match /user_activity/{activityId} {
+      allow read, write: if true;
+    }
+
+    // User Playlists & Saved Videos
+    match /playlists/{playlistId} {
+      allow read, write: if true;
+    }
+
+    // Super Thanks & Creator Tips
+    match /super_thanks/{thanksId} {
+      allow read, write: if true;
+    }
+
+    // Search Query Logs
+    match /search_logs/{searchId} {
+      allow read, write: if true;
+    }
+
+    // Help Center Support Tickets
+    match /support_tickets/{ticketId} {
+      allow read, write: if true;
+    }
+
+    // Help Center Live Chat Messages
+    match /support_messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // General SMS & Live Messages
+    match /sms/{smsId} {
+      allow read, write: if true;
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // Notifications & System Alerts
+    match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
+    match /users/{userId}/notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
+    match /users/{userId}/messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // User Feedback & Suggestions
+    match /feedback/{feedbackId} {
+      allow read, write: if true;
+    }
+
+    match /studio_feedback/{feedbackId} {
+      allow read, write: if true;
+    }
+  }
+}
+

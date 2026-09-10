@@ -1,0 +1,41 @@
+{
+  "id": "/",
+  "name": "BundeliTube (बुन्देली ट्यूब)",
+  "short_name": "BundeliTube",
+  "description": "बुन्देली लोकगीत, राई, आल्हा, फाग वीडियो और क्रिएटर कमाई प्लेटफ़ॉर्म",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#dc2626",
+  "orientation": "portrait-primary",
+  "lang": "hi",
+  "dir": "ltr",
+  "categories": ["entertainment", "music", "video"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

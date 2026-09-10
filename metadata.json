@@ -1,0 +1,6 @@
+{
+  "name": "BundeliTube - Bundeli Song & Creator Earning App",
+  "description": "Streaming platform for Bundeli song videos, Rai, Lokgeet, with creator studio, channel management, and earnings wallet.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
