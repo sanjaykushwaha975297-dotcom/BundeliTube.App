@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import path from "path";
+import fs from "fs";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import multer from "multer";
@@ -163,6 +164,16 @@ app.get("/external-admin-portal", (req: Request, res: Response) => {
 
 // Digital Asset Links for Android Play Store TWA (PWABuilder)
 app.get("/.well-known/assetlinks.json", (_req: Request, res: Response) => {
+  const assetlinksPath = path.join(process.cwd(), "public", ".well-known", "assetlinks.json");
+  if (fs.existsSync(assetlinksPath)) {
+    try {
+      const content = fs.readFileSync(assetlinksPath, "utf-8");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      return res.send(content);
+    } catch {
+      // fallback
+    }
+  }
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.json([
     {
