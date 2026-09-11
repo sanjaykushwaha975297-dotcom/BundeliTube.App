@@ -1,4 +1,5 @@
 import React from 'react';
+import { APP_LOGO_CONFIG } from '../config/appLogo';
 
 interface BundeliLogoProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
@@ -16,8 +17,10 @@ export const BundeliLogo: React.FC<BundeliLogoProps> = ({
   variant = 'horizontal',
   className = '',
   logoUrl,
-  appName = 'BundeliTube'
+  appName = APP_LOGO_CONFIG.appName || 'BundeliTube'
 }) => {
+  const defaultLocalCandidates = React.useMemo(() => ['/logo.png', '/logo.jpg', '/logo.jpeg', '/logo.webp', '/logo.svg'], []);
+  const [candidateIdx, setCandidateIdx] = React.useState(0);
   const [imgError, setImgError] = React.useState(false);
 
   const sizeMap = {
@@ -30,7 +33,28 @@ export const BundeliLogo: React.FC<BundeliLogoProps> = ({
   };
 
   const dim = sizeMap[size];
-  const effectiveLogoUrl = !imgError && logoUrl && logoUrl.trim().length > 0 ? logoUrl.trim() : null;
+
+  // Pick logo from props OR from /src/config/appLogo.ts
+  const rawLogoUrl = (logoUrl && logoUrl.trim().length > 0)
+    ? logoUrl.trim()
+    : (APP_LOGO_CONFIG.logoUrl && APP_LOGO_CONFIG.logoUrl.trim().length > 0)
+      ? APP_LOGO_CONFIG.logoUrl.trim()
+      : '/logo.png';
+
+  const isDefaultLocal = rawLogoUrl === '/logo.png';
+  const currentLogoSrc = isDefaultLocal ? defaultLocalCandidates[candidateIdx] : rawLogoUrl;
+  const effectiveLogoUrl = !imgError ? currentLogoSrc : null;
+
+  const handleImageError = () => {
+    if (isDefaultLocal && candidateIdx < defaultLocalCandidates.length - 1) {
+      setCandidateIdx(prev => prev + 1);
+    } else {
+      setImgError(true);
+    }
+  };
+
+  const shouldShowText = (showText !== false) && (APP_LOGO_CONFIG.showBrandText !== false);
+  const customLogoMaxW = !shouldShowText ? 'max-w-[200px] sm:max-w-[240px]' : dim.maxW;
 
   // Hyper-realistic 3D Red & Black Aerodynamic Play Emblem (Matching BundeliTube official logo)
   const renderEmblemSVG = (iconSize: number) => (
@@ -278,7 +302,7 @@ export const BundeliLogo: React.FC<BundeliLogoProps> = ({
           <img
             src={effectiveLogoUrl}
             alt={appName}
-            onError={() => setImgError(true)}
+            onError={handleImageError}
             className={`object-contain ${dim.maxH} ${dim.maxW} w-auto h-auto max-h-[160px] drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] transition-transform duration-300 group-hover:scale-105`}
             referrerPolicy="no-referrer"
           />
@@ -292,7 +316,7 @@ export const BundeliLogo: React.FC<BundeliLogoProps> = ({
           <img
             src={effectiveLogoUrl}
             alt={appName}
-            onError={() => setImgError(true)}
+            onError={handleImageError}
             className={`object-contain ${dim.maxH} ${dim.maxW} w-auto h-auto`}
             referrerPolicy="no-referrer"
           />
@@ -308,21 +332,21 @@ export const BundeliLogo: React.FC<BundeliLogoProps> = ({
     }
 
     return (
-      <div className={`flex items-center gap-2 sm:gap-3 group select-none ${className}`}>
+      <div className={`flex items-center gap-2 sm:gap-2.5 group select-none ${className}`}>
         <div className="relative flex items-center justify-center shrink-0">
           <img
             src={effectiveLogoUrl}
             alt={appName}
-            onError={() => setImgError(true)}
-            className={`object-contain ${dim.maxH} ${dim.maxW} w-auto h-auto drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]`}
+            onError={handleImageError}
+            className={`object-contain ${dim.maxH} ${customLogoMaxW} w-auto h-auto drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] transition-transform duration-200 group-hover:scale-105`}
             referrerPolicy="no-referrer"
           />
         </div>
 
-        {showText && (
+        {shouldShowText && (
           <div className="flex items-center">
-            <span className={`font-black tracking-tight text-slate-900 dark:text-white group-hover:text-red-500 transition-colors drop-shadow-[0_2px_4px_rgba(0,0,0,0.2)] dark:drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] font-sans ${dim.text}`}>
-              Bundeli<span className="text-red-600 font-black drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]">Tube</span>
+            <span className={`font-black tracking-tight text-slate-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors font-sans ${dim.text}`}>
+              Bundeli<span className="text-red-600 font-black drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]">Tube</span>
             </span>
           </div>
         )}

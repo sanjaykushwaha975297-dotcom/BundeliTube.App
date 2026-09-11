@@ -26,7 +26,7 @@ import {
 import { UserAccount, Channel, ChannelSubmission } from '../types';
 import { CATEGORIES } from '../data/mockData';
 import { Language, translations } from '../locales/i18n';
-import { getAuthSafe, getFirestoreSafe, addDoc, collection, doc, setDoc, updateDoc, serverTimestamp, cleanFirestoreData, updateChannelLogoGlobally } from '../lib/firebase';
+import { getAuthSafe, getFirestoreSafe, addDoc, collection, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, cleanFirestoreData, updateChannelLogoGlobally } from '../lib/firebase';
 import { compressImageFile, AVATAR_COMPRESS_OPTIONS, THUMBNAIL_COMPRESS_OPTIONS } from '../lib/imageCompressor';
 
 interface CreateChannelModalProps {
@@ -168,7 +168,16 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
     setIsSubmitting(true);
 
     const generatedHandle = `@${channelName.trim().toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9_]/gi, '') || 'bundelichannel'}`;
-    const cleanChanId = `chan-${currentUser?.id || Date.now()}`;
+    
+    // Meaningful, human-readable channel ID (e.g. BT-CH-PRIYANSH-3119)
+    const cleanNameSegment = channelName
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 8) || 'CREATOR';
+    const mobileLast4 = cleanMobile.slice(-4) || (currentUser?.id || '').slice(-4).toUpperCase() || Math.floor(1000 + Math.random() * 9000).toString();
+    const cleanChanId = `BT-CH-${cleanNameSegment}-${mobileLast4}`;
+
     const effectiveUid = currentUser?.id || 'user';
     const effectiveLogo = channelLogoPreview || currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
 
@@ -180,27 +189,55 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
       channelAvatar: effectiveLogo,
       channelLogoUrl: effectiveLogo,
       avatarUrl: effectiveLogo,
+      logo: effectiveLogo,
+      avatar: effectiveLogo,
       category: channelCategory,
       mobileNumber: cleanMobile,
+      phone: cleanMobile,
+      contactNumber: cleanMobile,
       panCardHolderName: cleanPanName,
       panName: cleanPanName,
+      accountHolder: accountHolder.trim() || cleanPanName || currentUser?.name || undefined,
       panNumber: cleanPan,
+      panCardNumber: cleanPan,
+      documentNumber: cleanPan,
+      aadhaarNumber: cleanPan,
+      aadhaarUid: cleanPan,
+      // PAN and KYC photo aliases to guarantee display in external admin portal
       panPhotoUrl: panPhotoPreview,
+      panPhoto: panPhotoPreview,
+      panCardPhoto: panPhotoPreview,
+      panCardPhotoUrl: panPhotoPreview,
+      panFrontPhotoUrl: panPhotoPreview,
+      aadhaarPhotoUrl: panPhotoPreview,
+      aadhaarFrontPhotoUrl: panPhotoPreview,
+      frontPhotoUrl: panPhotoPreview,
+      frontPhoto: panPhotoPreview,
+      aadhaarBackPhotoUrl: panPhotoPreview,
+      backPhotoUrl: panPhotoPreview,
+      backPhoto: panPhotoPreview,
+      kycPhotoUrl: panPhotoPreview,
+      kycPhoto: panPhotoPreview,
+      documentPhotoUrl: panPhotoPreview,
+      documentUrl: panPhotoPreview,
       bankName: bankName.trim() || undefined,
-      accountHolder: accountHolder.trim() || currentUser?.name || undefined,
       accountNumber: accountNumber.trim() || undefined,
       ifscCode: ifscCode.trim().toUpperCase() || undefined,
       branchName: branchName.trim() || undefined,
       upiId: upiId.trim() || undefined,
       status: 'pending',
       approvalStatus: 'pending',
+      kycStatus: 'pending',
+      partnerProgramStatus: 'applied',
+      programType: 'BundeliTube Partner Program (BPP)',
       submittedAt: new Date().toISOString()
     };
 
     try {
       const db = getFirestoreSafe();
       
-      // 1. Submit to channel_submissions with all logo fields
+      // 1. Submit ONLY to channel_submissions for admin verification!
+      // (Do NOT create pending duplicate in channels so external admin website displays exactly ONE card)
       const cleanSubData = cleanFirestoreData({
         ...submission,
         channelAvatar: effectiveLogo,
@@ -212,59 +249,23 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
         console.warn('Firestore channel_submissions write warning:', err);
       });
 
-      // 2. Write to channels collection as pending with all logo fields
-      const cleanChannelData = cleanFirestoreData({
-        id: submission.id,
-        ownerUid: effectiveUid,
-        name: submission.channelName,
-        handle: submission.channelHandle,
-        avatar: effectiveLogo,
-        channelLogoUrl: effectiveLogo,
-        logo: effectiveLogo,
-        subscribers: 0,
-        category: submission.category,
-        bio: `${submission.channelName} official channel on BundeliTube`,
-        joinedDate: new Date().getFullYear().toString(),
-        isVerified: false,
-        approvalStatus: 'pending',
-        kycStatus: 'pending',
-        mobileNumber: submission.mobileNumber || '',
-        panCardHolderName: submission.panCardHolderName || '',
-        panName: submission.panName || '',
-        panNumber: submission.panNumber || '',
-        panPhotoUrl: submission.panPhotoUrl || '',
-        bankDetails: {
-          bankName: submission.bankName,
-          accountHolder: submission.accountHolder,
-          accountNumber: submission.accountNumber,
-          ifscCode: submission.ifscCode,
-          branchName: submission.branchName,
-          upiId: submission.upiId || ''
-        },
-        totalViews: 0,
-        videoCount: 0,
-        cpmRate: 35.00,
-        createdAt: new Date().toISOString(),
-        serverTimestamp: serverTimestamp()
-      });
-
-      await setDoc(doc(db, 'channels', submission.id), cleanChannelData, { merge: true }).catch((err) => {
-        console.warn('Firestore channels write warning:', err);
-      });
+      // 2. Remove any old unapproved/duplicate pending document in channels collection
       if (effectiveUid && effectiveUid !== 'user') {
-        await setDoc(doc(db, 'channels', effectiveUid), cleanChannelData, { merge: true }).catch((err) => {
-          console.warn('Firestore channels uid write warning:', err);
-        });
+        deleteDoc(doc(db, 'channels', `chan-${effectiveUid}`)).catch(() => {});
+        deleteDoc(doc(db, 'channels', effectiveUid)).catch(() => {});
+        deleteDoc(doc(db, 'channels', submission.id)).catch(() => {});
       }
 
-      // 3. Update user doc with pending channelStatus in users collection (Strictly NOT approved yet)
+      // 3. Keep user profile as regular viewer with pending partner program status in users collection
       if (effectiveUid && effectiveUid !== 'user') {
         await setDoc(doc(db, 'users', effectiveUid), cleanFirestoreData({
-          role: 'viewer',
+          role: 'viewer', // Normal user until approved!
           channelStatus: 'pending',
           approvalStatus: 'pending',
+          partnerProgramStatus: 'applied',
           channelId: submission.id,
           channelName: submission.channelName,
+          channelHandle: submission.channelHandle,
           avatar: effectiveLogo,
           channelLogoUrl: effectiveLogo,
           mobileNumber: submission.mobileNumber,
@@ -275,7 +276,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
         });
       }
 
-      // 4. Propagate logo across all user videos in Firestore immediately
+      // 4. Propagate logo across user videos in Firestore immediately
       try {
         await updateChannelLogoGlobally(submission.id, effectiveUid, effectiveLogo, submission.channelName);
       } catch (err) {

@@ -37,7 +37,10 @@ import {
   executeAdRevenueDistribution, 
   toggleWithdrawalWindow, 
   getDistributionHistory,
-  startFirestoreDistributionListener
+  startFirestoreDistributionListener,
+  getChannelApplicationsAndUsers,
+  approveChannelApplication,
+  rejectChannelApplication
 } from "./server/externalAdminService.js";
 import { getExternalAdminPortalHtml } from "./server/externalAdminPortalHtml.js";
 
@@ -114,6 +117,40 @@ app.get("/api/external-admin/distribution-history", async (_req: Request, res: R
   try {
     const history = await getDistributionHistory();
     res.json({ success: true, history });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. External Admin API: Channel Applications, Partner Program & User Separation
+app.get("/api/external-admin/channel-applications", async (_req: Request, res: Response) => {
+  try {
+    const data = await getChannelApplicationsAndUsers();
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. External Admin API: Approve Channel & Promote to BundeliTube Partner Program
+app.post("/api/external-admin/approve-channel", async (req: Request, res: Response) => {
+  try {
+    const { id, adminNote } = req.body;
+    if (!id) return res.status(400).json({ success: false, error: "Channel application ID is required" });
+    const result = await approveChannelApplication(id, adminNote);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7. External Admin API: Reject Channel Application
+app.post("/api/external-admin/reject-channel", async (req: Request, res: Response) => {
+  try {
+    const { id, reason } = req.body;
+    if (!id) return res.status(400).json({ success: false, error: "Channel application ID is required" });
+    const result = await rejectChannelApplication(id, reason);
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

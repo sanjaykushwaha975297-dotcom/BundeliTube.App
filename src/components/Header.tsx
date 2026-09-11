@@ -61,7 +61,6 @@ interface HeaderProps {
   onOpenPremium: () => void;
   onOpenHelpCenter?: () => void;
   onOpenPolicies?: (tab?: string) => void;
-  onOpenAdminPortal?: () => void;
   pendingSubmissionsCount?: number;
   onNavigateToStudio?: () => void;
   onOpenPendingStatusModal?: () => void;
@@ -73,6 +72,7 @@ interface HeaderProps {
   language: Language;
   onToggleLanguage: () => void;
   onToggleNotifications?: () => void;
+  onNavigateHome?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -95,7 +95,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPremium,
   onOpenHelpCenter,
   onOpenPolicies,
-  onOpenAdminPortal,
   pendingSubmissionsCount = 0,
   onNavigateToStudio,
   onOpenPendingStatusModal,
@@ -106,7 +105,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme,
   language,
   onToggleLanguage,
-  onToggleNotifications
+  onToggleNotifications,
+  onNavigateHome,
 }) => {
   const t = translations[language];
   const [showThreeDotMenu, setShowThreeDotMenu] = useState(false);
@@ -168,8 +168,6 @@ export const Header: React.FC<HeaderProps> = ({
   const isPendingCreator = channel.approvalStatus === 'pending';
   const hasNoChannel = !isApprovedCreator && !isPendingCreator;
   const unreadCount = notifications.filter(n => !n.isRead).length;
-
-  const isAdmin = currentUser?.email === 'sanjaykushwaha975297@gmail.com' || currentUser?.role === 'admin' || currentUser?.id === 'user-bundeli-maati-01';
 
   const isLight = theme === 'light';
 
@@ -246,9 +244,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <Menu className="w-5 h-5" />
               </button>
 
-              <div className="flex items-center select-none shrink-0">
+              <button
+                type="button"
+                onClick={onNavigateHome}
+                className="flex items-center select-none shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded-lg"
+                title="BundeliTube Home"
+              >
                 <BundeliLogo size="sm" showText={true} />
-              </div>
+              </button>
             </div>
 
             {/* Center-Right: Desktop/Tablet Search Bar + Mic Voice Search Button */}

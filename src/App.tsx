@@ -71,6 +71,7 @@ import {
   getDoc, 
   getDocs,
   setDoc,
+  deleteDoc,
   collection, 
   query, 
   where,
@@ -1837,8 +1838,9 @@ export default function App() {
 
   const handleChannelSubmitted = (submission: ChannelSubmission) => {
     const effectiveLogo = submission.channelAvatar || submission.channelLogoUrl || submission.avatarUrl || currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+    const effectiveChanId = submission.id || `BT-CH-${(submission.channelName || 'CREATOR').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)}-${(submission.mobileNumber || '').slice(-4) || '2026'}`;
     const newChan: Channel = {
-      id: `chan-${submission.ownerUid || currentUser?.id || Date.now()}`,
+      id: effectiveChanId,
       name: submission.channelName,
       handle: submission.channelHandle || `@${submission.channelName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')}`,
       avatar: effectiveLogo,
@@ -1886,10 +1888,13 @@ export default function App() {
 
     const pendingSub: ChannelSubmission = {
       ...submission,
+      id: effectiveChanId,
       channelAvatar: effectiveLogo,
       channelLogoUrl: effectiveLogo,
       avatarUrl: effectiveLogo,
-      status: 'pending'
+      status: 'pending',
+      approvalStatus: 'pending',
+      kycStatus: 'pending'
     };
 
     setChannelSubmissions(prev => {
@@ -1902,32 +1907,34 @@ export default function App() {
     try {
       const db = getFirestoreSafe();
       if (db) {
-        // 1. Submit to channel_submissions for admin verification
+        // 1. Submit ONLY to channel_submissions for admin verification!
+        // (Do NOT write duplicate pending channel to channels so external admin website shows 1 single card)
         setDoc(doc(db, 'channel_submissions', pendingSub.id), cleanFirestoreData({
           ...pendingSub,
           submittedAt: serverTimestamp(),
           serverTimestamp: serverTimestamp()
         }), { merge: true }).catch(err => console.warn('Firestore channel_submissions write error:', err));
 
-        // 2. Also register in channels collection with pending status
-        setDoc(doc(db, 'channels', newChan.id), cleanFirestoreData({
-          ...newChan,
-          status: 'pending',
-          approvalStatus: 'pending',
-          kycStatus: 'pending',
-          createdAt: serverTimestamp(),
-          serverTimestamp: serverTimestamp()
-        }), { merge: true }).catch(err => console.warn('Firestore channels write error:', err));
-
-        // 3. Update user profile with pending creator role
+        // 2. Remove any old unapproved/duplicate pending document in channels collection
         const targetUid = submission.ownerUid || currentUser?.id;
         if (targetUid && targetUid !== 'user') {
+          deleteDoc(doc(db, 'channels', `chan-${targetUid}`)).catch(() => {});
+          deleteDoc(doc(db, 'channels', targetUid)).catch(() => {});
+          deleteDoc(doc(db, 'channels', effectiveChanId)).catch(() => {});
+        }
+
+        // 3. Keep user profile as regular viewer with pending partner program status in users collection
+        if (targetUid && targetUid !== 'user') {
           setDoc(doc(db, 'users', targetUid), cleanFirestoreData({
-            role: 'creator',
+            role: 'viewer', // Keep regular user role until approved
             channelStatus: 'pending',
-            channelId: newChan.id,
-            channelName: newChan.name,
+            approvalStatus: 'pending',
+            partnerProgramStatus: 'applied',
+            channelId: pendingSub.id,
+            channelName: pendingSub.channelName,
+            channelHandle: pendingSub.channelHandle,
             avatar: effectiveLogo,
+            mobileNumber: submission.mobileNumber,
             updatedAt: serverTimestamp()
           }), { merge: true }).catch(err => console.warn('Firestore user update error:', err));
         }
@@ -2924,6 +2931,11 @@ export default function App() {
             onToggleTheme={handleToggleTheme}
             language={language}
             onToggleLanguage={handleToggleLanguage}
+            onNavigateHome={() => {
+              setSelectedVideo(null);
+              setCurrentView('home');
+              setSearchQuery('');
+            }}
           />
         </div>
 

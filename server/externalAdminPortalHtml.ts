@@ -19,6 +19,17 @@ export function getExternalAdminPortalHtml(host: string): string {
     .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; }
     .badge-green { background: #065f46; color: #34d399; }
     .badge-amber { background: #78350f; color: #fbbf24; }
+    .badge-blue { background: #1e3a8a; color: #60a5fa; }
+    .badge-purple { background: #581c87; color: #c084fc; }
+    .badge-red { background: #7f1d1d; color: #f87171; }
+
+    .pan-thumb { width: 70px; height: 46px; object-fit: cover; border-radius: 6px; border: 1px solid #475569; cursor: pointer; transition: transform 0.2s; background: #0f172a; }
+    .pan-thumb:hover { transform: scale(1.08); border-color: #38bdf8; }
+
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 9999; justify-content: center; align-items: center; padding: 20px; }
+    .modal-box { background: #1e293b; border: 1px solid #475569; border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative; }
+    .modal-close { position: absolute; top: 16px; right: 16px; background: #334155; border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .modal-close:hover { background: #dc2626; }
 
     .nav-tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 8px; flex-wrap: wrap; }
     .tab-btn { background: transparent; border: none; color: #94a3b8; font-size: 14px; font-weight: 600; padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
@@ -85,9 +96,12 @@ export function getExternalAdminPortalHtml(host: string): string {
 
     <div class="nav-tabs">
       <button class="tab-btn active" onclick="switchTab('distribute')">⚡ 1. विज्ञापन आय वितरण (Ad Payout)</button>
-      <button class="tab-btn" onclick="switchTab('withdrawal')">🔒 2. विड्रॉल विंडो (1 से 5 तारीख)</button>
-      <button class="tab-btn" onclick="switchTab('history')">📜 3. वितरण इतिहास (History)</button>
-      <button class="tab-btn" onclick="switchTab('api-code')">💻 4. आपकी वेबसाइट का कोड (API / Code)</button>
+      <button class="tab-btn" onclick="switchTab('applications')">📋 2. लंबित चैनल व पैन सत्यापन (Pending KYC)</button>
+      <button class="tab-btn" onclick="switchTab('partners')">👑 3. पार्टनर प्रोग्राम चैनल्स (BPP Channels)</button>
+      <button class="tab-btn" onclick="switchTab('users')">👥 4. साधारण दर्शक (Normal Users)</button>
+      <button class="tab-btn" onclick="switchTab('withdrawal')">🔒 5. विड्रॉल विंडो (1 से 5 तारीख)</button>
+      <button class="tab-btn" onclick="switchTab('history')">📜 6. वितरण इतिहास (History)</button>
+      <button class="tab-btn" onclick="switchTab('api-code')">💻 7. आपकी वेबसाइट का कोड (API / Code)</button>
     </div>
 
     <!-- TAB 1: DISTRIBUTE -->
@@ -338,6 +352,164 @@ async function lockWithdrawal() {
   const data = await response.json();
   alert(data.message);
 }</pre>
+
+        <!-- Method E: Channel Applications & KYC Verification via API -->
+        <div class="code-title">
+          <span>तरीका 5: चैनल अनुमोदन (Approve) व पैन कार्ड फोटो देखना (API)</span>
+          <button class="copy-btn" onclick="copyCode('js-chan-code')">कॉपी करें</button>
+        </div>
+        <pre id="js-chan-code">// 1. सभी लंबित आवेदन, पार्टनर चैनल्स और नॉर्मल यूजर्स लाएं:
+async function fetchChannelApplications() {
+  const res = await fetch('${host}/api/external-admin/channel-applications');
+  const data = await res.json();
+  console.log("लंबित आवेदन:", data.pendingApplications);
+  console.log("पार्टनर चैनल्स:", data.partnerChannels);
+  console.log("साधारण दर्शक:", data.normalUsers);
+  // प्रत्येक आवेदन में panPhotoUrl, panNumber, panCardHolderName, mobileNumber शामिल है
+}
+
+// 2. चैनल को अनुमोदित (Approve) करके पार्टनर प्रोग्राम में जोड़ें:
+async function approveChannel(channelId) {
+  const res = await fetch('${host}/api/external-admin/approve-channel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: channelId })
+  });
+  const result = await res.json();
+  alert(result.message);
+}</pre>
+      </div>
+    </div>
+
+    <!-- TAB 5: PENDING CHANNEL APPLICATIONS & KYC -->
+    <div id="tab-applications" class="tab-content">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div>
+            <h2>📋 लंबित चैनल आवेदन व पैन कार्ड सत्यापन (Pending KYC Approvals)</h2>
+            <p style="font-size:13px; color:#94a3b8; margin:0;">
+              यहाँ केवल नए चैनल बनाने वाले क्रिएटर्स के आवेदन दिखते हैं (एक क्रिएटर केवल एक बार - नो डुप्लीकेट)। अनुमोदन करने पर चैनल स्वतः बुन्देलीट्यूब पार्टनर प्रोग्राम में सक्रिय हो जाता है।
+            </p>
+          </div>
+          <button class="btn" style="padding:6px 14px; font-size:12px;" onclick="loadApplicationsAndUsers()">🔄 रिफ्रेश सूची</button>
+        </div>
+
+        <div class="grid-3" style="margin-bottom:16px;">
+          <div class="stat-box">
+            <div class="num" id="statPendingCount">0</div>
+            <div class="lbl">सत्यापन हेतु लंबित आवेदन</div>
+          </div>
+          <div class="stat-box">
+            <div class="num" id="statPartnersCount" style="color:#34d399;">0</div>
+            <div class="lbl">सक्रिय पार्टनर चैनल्स (BPP)</div>
+          </div>
+          <div class="stat-box">
+            <div class="num" id="statUsersCount" style="color:#a78bfa;">0</div>
+            <div class="lbl">साधारण दर्शक (Viewers)</div>
+          </div>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>चैनल व आईडी</th>
+                <th>क्रिएटर / मोबाइल</th>
+                <th>पैन कार्ड नंबर व धारक</th>
+                <th>पैन कार्ड फोटो (KYC)</th>
+                <th>बैंक / UPI</th>
+                <th>कार्यवाही (Action)</th>
+              </tr>
+            </thead>
+            <tbody id="applicationsTableBody">
+              <tr><td colspan="6" style="text-align:center;">आवेदन लोड हो रहे हैं...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: ACTIVE PARTNER PROGRAM CHANNELS -->
+    <div id="tab-partners" class="tab-content">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div>
+            <h2>👑 बुन्देलीट्यूब पार्टनर प्रोग्राम (BundeliTube Partner Program - BPP)</h2>
+            <p style="font-size:13px; color:#94a3b8; margin:0;">
+              ये सभी वे अधिकृत क्रिएटर चैनल्स हैं जिनका KYC और पैन कार्ड सत्यापित हो चुका है और जो विज्ञापन आय अर्जित कर रहे हैं।
+            </p>
+          </div>
+          <button class="btn" style="padding:6px 14px; font-size:12px;" onclick="loadApplicationsAndUsers()">🔄 रिफ्रेश</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>चैनल नाम व हैंडल</th>
+                <th>चैनल आईडी (Readable)</th>
+                <th>क्रिएटर / मोबाइल</th>
+                <th>पैन सत्यापन</th>
+                <th>सब्सक्राइबर्स</th>
+                <th>Ads Impressions</th>
+                <th>पार्टनर स्थिति</th>
+              </tr>
+            </thead>
+            <tbody id="partnersTableBody">
+              <tr><td colspan="7" style="text-align:center;">पार्टनर चैनल्स लोड हो रहे हैं...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 7: NORMAL USERS (VIEWERS) -->
+    <div id="tab-users" class="tab-content">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div>
+            <h2>👥 साधारण दर्शक (Normal Users / Viewers)</h2>
+            <p style="font-size:13px; color:#94a3b8; margin:0;">
+              ये वे सामान्य उपयोगकर्ता हैं जो वीडियो देखने, लाइक करने या कमेंट करने के लिए लॉगिन करते हैं। इन्होंने कोई चैनल नहीं बनाया है।
+            </p>
+          </div>
+          <button class="btn" style="padding:6px 14px; font-size:12px;" onclick="loadApplicationsAndUsers()">🔄 रिफ्रेश</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>उपयोगकर्ता</th>
+                <th>ईमेल / मोबाइल</th>
+                <th>यूजर आईडी</th>
+                <th>रोल (Role)</th>
+                <th>पंजीकरण स्थिति</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="5" style="text-align:center;">उपयोगकर्ता लोड हो रहे हैं...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAN CARD PHOTO ZOOM MODAL -->
+  <div id="panModal" class="modal-overlay" onclick="if(event.target === this) closePanModal()">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closePanModal()">&times;</button>
+      <h3 style="margin-top:0; color:#38bdf8; display:flex; align-items:center; gap:8px;">
+        <span>🔍</span> पैन कार्ड फोटो सत्यापन (Original PAN Photo)
+      </h3>
+      <div id="panModalDetails" style="font-size:13px; color:#cbd5e1; margin-bottom:14px; line-height:1.6; background:#0f172a; padding:12px; border-radius:8px; border:1px solid #334155;"></div>
+      <div style="text-align:center; background:#020617; padding:12px; border-radius:10px; border:1px solid #334155;">
+        <img id="panModalImage" src="" alt="PAN Card Photo" style="max-width:100%; max-height:480px; object-fit:contain; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
+        <a id="panDownloadLink" href="#" download="pan_card.jpg" class="btn" style="padding:8px 16px; font-size:13px; text-decoration:none;">📥 फोटो डाउनलोड करें</a>
+        <button class="btn" style="background:#475569; padding:8px 16px; font-size:13px;" onclick="closePanModal()">बंद करें</button>
       </div>
     </div>
   </div>
@@ -351,6 +523,7 @@ async function lockWithdrawal() {
       event.target.classList.add('active');
       document.getElementById('tab-' + tabId).classList.add('active');
       if (tabId === 'history') loadHistory();
+      if (tabId === 'applications' || tabId === 'partners' || tabId === 'users') loadApplicationsAndUsers();
     }
 
     function showAlert(msg, isSuccess = true) {
@@ -527,6 +700,224 @@ async function lockWithdrawal() {
       } catch (err) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#f87171;">इतिहास लोड नहीं हो सका।</td></tr>';
       }
+    }
+
+    async function loadApplicationsAndUsers() {
+      const appTbody = document.getElementById('applicationsTableBody');
+      const partTbody = document.getElementById('partnersTableBody');
+      const userTbody = document.getElementById('usersTableBody');
+
+      appTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">डेटा लोड हो रहा है...</td></tr>';
+      partTbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">डेटा लोड हो रहा है...</td></tr>';
+      userTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">डेटा लोड हो रहा है...</td></tr>';
+
+      try {
+        const res = await fetch('/api/external-admin/channel-applications');
+        const data = await res.json();
+        if (!data.success) {
+          appTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#f87171;">त्रुटि: डेटा लोड नहीं हुआ</td></tr>';
+          return;
+        }
+
+        // 1. Pending Applications
+        const pending = data.pendingApplications || [];
+        document.getElementById('statPendingCount').textContent = pending.length;
+        if (pending.length === 0) {
+          appTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8; padding:24px;">🎉 कोई नया लंबित चैनल आवेदन नहीं है। सभी आवेदन सत्यापित हैं!</td></tr>';
+        } else {
+          appTbody.innerHTML = '';
+          pending.forEach(app => {
+            const tr = document.createElement('tr');
+            const hasPhoto = Boolean(app.panPhotoUrl);
+            const safePhoto = (app.panPhotoUrl || '').replace(/'/g, "\\'");
+            const safeName = (app.panCardHolderName || app.channelName || '').replace(/'/g, "\\'");
+            const safePan = (app.panNumber || '').replace(/'/g, "\\'");
+            const safeMobile = (app.mobileNumber || '').replace(/'/g, "\\'");
+            const safeId = (app.id || app.submissionId || '').replace(/'/g, "\\'");
+            const safeChanName = (app.channelName || '').replace(/'/g, "\\'");
+
+            const photoCell = hasPhoto 
+              ? '<div style="display:flex; align-items:center; gap:8px;">' +
+                   '<img src="' + safePhoto + '" class="pan-thumb" onclick="viewPanModal(\'' + safePhoto + '\', \'' + safeName + '\', \'' + safePan + '\', \'' + safeMobile + '\')" title="क्लिक करके बड़ा देखें" alt="PAN">' +
+                   '<button class="btn" style="padding:4px 8px; font-size:11px; background:#1e3a8a;" onclick="viewPanModal(\'' + safePhoto + '\', \'' + safeName + '\', \'' + safePan + '\', \'' + safeMobile + '\')">🔍 बड़ा देखें</button>' +
+                 '</div>'
+              : '<span class="badge badge-amber">फोटो अनुपलब्ध</span>';
+
+            tr.innerHTML = \`
+              <td>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <img src="\${app.channelAvatar}" style="width:36px; height:36px; border-radius:50%; object-fit:cover; border:1px solid #475569;">
+                  <div>
+                    <div style="font-weight:700; color:#f8fafc;">\${app.channelName}</div>
+                    <div style="font-size:11px; color:#38bdf8; font-family:monospace;">ID: \${app.id}</div>
+                    <div style="font-size:11px; color:#94a3b8;">\${app.channelHandle}</div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div style="font-weight:600; color:#f1f5f9;">\${app.panCardHolderName || 'क्रिएटर'}</div>
+                <div style="font-size:12px; color:#94a3b8;">📱 \${app.mobileNumber || 'N/A'}</div>
+                <div style="font-size:10px; color:#64748b; margin-top:2px;">UID: \${app.ownerUid ? app.ownerUid.slice(0, 10) + '...' : ''}</div>
+              </td>
+              <td>
+                <div style="font-weight:800; color:#fbbf24; font-family:monospace; letter-spacing:1px; font-size:13px;">\${app.panNumber || 'दर्ज नहीं'}</div>
+                <div style="font-size:11px; color:#94a3b8;">नाम: \${app.panCardHolderName || 'N/A'}</div>
+              </td>
+              <td>\${photoCell}</td>
+              <td>
+                <div style="font-size:12px; color:#cbd5e1;">\${app.bankDetails?.bankName || 'UPI'}</div>
+                <div style="font-size:11px; color:#94a3b8;">\${app.bankDetails?.accountNumber ? 'A/C: ' + app.bankDetails.accountNumber : (app.bankDetails?.upiId ? 'UPI: ' + app.bankDetails.upiId : 'UPI')}</div>
+                <div style="font-size:10px; color:#64748b;">\${app.bankDetails?.ifscCode || ''}</div>
+              </td>
+              <td>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <button class="btn btn-green" style="padding:6px 12px; font-size:12px;" onclick="approveChannel('\${safeId}', '\${safeChanName}')">✅ अनुमोदित करें (Approve)</button>
+                  <button class="btn btn-red" style="padding:6px 12px; font-size:12px;" onclick="rejectChannel('\${safeId}', '\${safeChanName}')">❌ अस्वीकार</button>
+                </div>
+              </td>
+            \`;
+            appTbody.appendChild(tr);
+          });
+        }
+
+        // 2. Partner Program Channels
+        const partners = data.partnerChannels || [];
+        document.getElementById('statPartnersCount').textContent = partners.length;
+        if (partners.length === 0) {
+          partTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8;">कोई सक्रिय पार्टनर चैनल नहीं मिला।</td></tr>';
+        } else {
+          partTbody.innerHTML = '';
+          partners.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = \`
+              <td>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <img src="\${p.channelAvatar}" style="width:34px; height:34px; border-radius:50%; object-fit:cover;">
+                  <div>
+                    <div style="font-weight:700; color:#f8fafc;">\${p.channelName}</div>
+                    <div style="font-size:11px; color:#94a3b8;">\${p.channelHandle}</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-family:monospace; color:#38bdf8; font-weight:700;">\${p.channelId || p.id}</td>
+              <td>
+                <div>\${p.panCardHolderName || 'पार्टनर क्रिएटर'}</div>
+                <div style="font-size:12px; color:#94a3b8;">📱 \${p.mobileNumber || 'N/A'}</div>
+              </td>
+              <td>
+                <span class="badge badge-green">✓ पैन सत्यापित (\${p.panNumber || 'OK'})</span>
+              </td>
+              <td style="font-weight:600;">\${Number(p.totalSubscribers || 0).toLocaleString('en-IN')}</td>
+              <td style="font-weight:700; color:#38bdf8;">\${Number(p.totalAds || 0).toLocaleString('en-IN')}</td>
+              <td>
+                <span class="badge badge-green">● BPP सक्रिय</span>
+              </td>
+            \`;
+            partTbody.appendChild(tr);
+          });
+        }
+
+        // 3. Normal Users (Viewers)
+        const normalUsers = data.normalUsers || [];
+        document.getElementById('statUsersCount').textContent = normalUsers.length;
+        if (normalUsers.length === 0) {
+          userTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">कोई साधारण दर्शक रिकॉर्ड नहीं मिला।</td></tr>';
+        } else {
+          userTbody.innerHTML = '';
+          normalUsers.forEach(u => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = \`
+              <td>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <img src="\${u.avatar}" style="width:32px; height:32px; border-radius:50%; object-fit:cover;">
+                  <div style="font-weight:600; color:#f8fafc;">\${u.name}</div>
+                </div>
+              </td>
+              <td>
+                <div style="font-size:12px; color:#cbd5e1;">\${u.email || u.mobileNumber || 'Google / OTP लॉगिन'}</div>
+              </td>
+              <td style="font-family:monospace; font-size:11px; color:#64748b;">\${u.uid}</td>
+              <td>
+                <span class="badge badge-purple">👥 साधारण दर्शक (Viewer)</span>
+              </td>
+              <td>
+                <span class="badge badge-blue">लॉगिन सक्रिय</span>
+              </td>
+            \`;
+            userTbody.appendChild(tr);
+          });
+        }
+
+      } catch (err) {
+        console.error('Error loading applications:', err);
+        showAlert('डेटा लोड करने में त्रुटि: ' + err.message, false);
+      }
+    }
+
+    async function approveChannel(id, name) {
+      if (!confirm(\`क्या आप चैनल "\${name}" (ID: \${id}) को बुन्देलीट्यूब पार्टनर प्रोग्राम में अनुमोदित (Approve) करना चाहते हैं?\\n\\nइसके बाद क्रिएटर के खाते में पार्टनर प्रोग्राम सक्रिय हो जाएगा और वॉलेट जुड़ जाएगा।\`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/external-admin/approve-channel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, adminNote: 'एडमिन पैनल द्वारा अनुमोदित' })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert(data.message || 'चैनल अनुमोदित हो गया!', true);
+          loadApplicationsAndUsers();
+          loadCreators();
+        } else {
+          showAlert('अनुमोदन विफल: ' + (data.error || 'अज्ञात त्रुटि'), false);
+        }
+      } catch (err) {
+        showAlert('सर्वर से कनेक्ट करने में त्रुटि: ' + err.message, false);
+      }
+    }
+
+    async function rejectChannel(id, name) {
+      const reason = prompt(\`चैनल "\${name}" को अस्वीकार करने का कारण दर्ज करें:\`, 'पैन कार्ड या पहचान विवरण का सत्यापन नहीं हो सका।');
+      if (!reason) return;
+
+      try {
+        const res = await fetch('/api/external-admin/reject-channel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, reason })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert(data.message || 'आवेदन अस्वीकार कर दिया गया।', true);
+          loadApplicationsAndUsers();
+        } else {
+          showAlert('अस्वीकृति विफल: ' + (data.error || 'अज्ञात त्रुटि'), false);
+        }
+      } catch (err) {
+        showAlert('त्रुटि: ' + err.message, false);
+      }
+    }
+
+    function viewPanModal(photoUrl, name, panNum, phone) {
+      const modal = document.getElementById('panModal');
+      const img = document.getElementById('panModalImage');
+      const details = document.getElementById('panModalDetails');
+      const dLink = document.getElementById('panDownloadLink');
+
+      img.src = photoUrl;
+      dLink.href = photoUrl;
+      details.innerHTML = \`
+        <strong>पैन कार्ड धारक:</strong> \${name || 'N/A'} &nbsp;|&nbsp; 
+        <strong>पैन नंबर:</strong> <span style="color:#fbbf24; font-family:monospace; font-size:14px; font-weight:700;">\${panNum || 'N/A'}</span> &nbsp;|&nbsp; 
+        <strong>मोबाइल:</strong> \${phone || 'N/A'}
+      \`;
+      modal.style.display = 'flex';
+    }
+
+    function closePanModal() {
+      document.getElementById('panModal').style.display = 'none';
     }
 
     function copyCode(id) {

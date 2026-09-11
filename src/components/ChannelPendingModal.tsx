@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, ShieldAlert, CheckCircle2, ChevronRight, X, AlertCircle } from 'lucide-react';
+import { Clock, CheckCircle2, ChevronRight, X, AlertCircle } from 'lucide-react';
 import { Channel } from '../types';
 import { Language, translations } from '../locales/i18n';
 
@@ -9,7 +9,6 @@ interface ChannelPendingModalProps {
   channel: Channel;
   language: Language;
   theme?: 'dark' | 'light';
-  onOpenAdminPortal?: () => void;
 }
 
 export const ChannelPendingModal: React.FC<ChannelPendingModalProps> = ({
@@ -18,7 +17,6 @@ export const ChannelPendingModal: React.FC<ChannelPendingModalProps> = ({
   channel,
   language,
   theme = 'dark',
-  onOpenAdminPortal
 }) => {
   if (!isOpen) return null;
 
@@ -116,20 +114,6 @@ export const ChannelPendingModal: React.FC<ChannelPendingModalProps> = ({
           >
             {language === 'hi' ? 'ठीक है, समझ गया' : 'Got it, thanks'}
           </button>
-
-          {onOpenAdminPortal && (
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onOpenAdminPortal();
-              }}
-              className="w-full py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition cursor-pointer shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5"
-            >
-              <ShieldAlert className="w-4 h-4" />
-              <span>{language === 'hi' ? 'एडमिन पोर्टल खोलें' : 'Open Admin Portal'}</span>
-            </button>
-          )}
         </div>
 
       </div>

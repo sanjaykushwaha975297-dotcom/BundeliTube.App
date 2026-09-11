@@ -10,6 +10,7 @@ import {
   query, 
   where,
   addDoc,
+  deleteDoc,
   serverTimestamp,
   orderBy,
   limit,
@@ -508,4 +509,425 @@ export function startFirestoreDistributionListener() {
     console.warn('[Firebase Bridge] Could not start Firestore distribution listener:', err);
   }
 }
+
+export interface ChannelApplicationRecord {
+  id: string;
+  submissionId: string;
+  channelId: string;
+  ownerUid: string;
+  channelName: string;
+  channelHandle: string;
+  channelAvatar: string;
+  category: string;
+  mobileNumber: string;
+  panCardHolderName: string;
+  panNumber: string;
+  panPhotoUrl: string;
+  bankDetails: {
+    bankName?: string;
+    accountHolder?: string;
+    accountNumber?: string;
+    ifscCode?: string;
+    branchName?: string;
+    upiId?: string;
+  };
+  approvalStatus: 'pending' | 'approved' | 'rejected';
+  kycStatus: string;
+  submittedAt: string;
+  rejectionReason?: string;
+  totalSubscribers?: number;
+  totalViews?: number;
+  totalAds?: number;
+  sourceCollection: 'channel_submissions' | 'channels';
+}
+
+export interface UserAccountSummary {
+  uid: string;
+  name: string;
+  email: string;
+  avatar: string;
+  role: 'viewer' | 'creator' | 'admin';
+  channelStatus: 'none' | 'pending' | 'approved' | 'rejected';
+  channelId?: string;
+  channelName?: string;
+  mobileNumber?: string;
+  createdAt?: string;
+  lastLoginAt?: string;
+}
+
+/**
+ * Fetch categorized user profiles and BundeliTube Partner Program (BPP) applications
+ * Deduplicates multiple pending entries so admin sees each applicant once.
+ */
+export async function getChannelApplicationsAndUsers() {
+  const pendingMap = new Map<string, ChannelApplicationRecord>();
+  const partnerMap = new Map<string, ChannelApplicationRecord>();
+  const rejectedMap = new Map<string, ChannelApplicationRecord>();
+  const allUsersMap = new Map<string, UserAccountSummary>();
+
+  // 1. Read channel_submissions
+  try {
+    const subSnap = await getDocs(collection(db, 'channel_submissions'));
+    subSnap.forEach(docSnap => {
+      const data = docSnap.data() as any;
+      const ownerUid = data.ownerUid || docSnap.id;
+      if (!ownerUid) return;
+
+      const rawPhoto = data.panPhotoUrl || data.panPhoto || data.panCardPhoto || data.panCardPhotoUrl || data.panFrontPhotoUrl || data.aadhaarPhotoUrl || data.aadhaarFrontPhotoUrl || data.frontPhotoUrl || data.kycPhotoUrl || data.documentPhotoUrl || data.documentUrl || '';
+
+      const chanName = data.channelName || data.name || 'बुंदेली चैनल';
+      const cleanSegment = chanName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'CREATOR';
+      const mobileClean = (data.mobileNumber || data.phone || '').replace(/\D/g, '');
+      const last4 = mobileClean.slice(-4) || ownerUid.slice(-4).toUpperCase() || '2026';
+      const cleanChanId = (data.id && data.id.startsWith('BT-CH-')) ? data.id : (docSnap.id.startsWith('BT-CH-') ? docSnap.id : `BT-CH-${cleanSegment}-${last4}`);
+
+      const record: ChannelApplicationRecord = {
+        id: cleanChanId,
+        submissionId: docSnap.id,
+        channelId: cleanChanId,
+        ownerUid,
+        channelName: chanName,
+        channelHandle: data.channelHandle || data.handle || `@${chanName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        channelAvatar: data.channelAvatar || data.channelLogoUrl || data.avatarUrl || data.avatar || data.logo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        category: data.category || 'music',
+        mobileNumber: mobileClean,
+        panCardHolderName: data.panCardHolderName || data.panName || data.accountHolder || '',
+        panNumber: data.panNumber || data.panCardNumber || data.documentNumber || '',
+        panPhotoUrl: rawPhoto,
+        bankDetails: {
+          bankName: data.bankName || data.bankDetails?.bankName,
+          accountHolder: data.accountHolder || data.panCardHolderName || data.panName,
+          accountNumber: data.accountNumber || data.bankDetails?.accountNumber,
+          ifscCode: data.ifscCode || data.bankDetails?.ifscCode,
+          branchName: data.branchName || data.bankDetails?.branchName,
+          upiId: data.upiId || data.bankDetails?.upiId
+        },
+        approvalStatus: (data.status === 'approved' || data.approvalStatus === 'approved') ? 'approved' : (data.status === 'rejected' || data.approvalStatus === 'rejected') ? 'rejected' : 'pending',
+        kycStatus: data.kycStatus || 'pending',
+        submittedAt: data.submittedAt || data.createdAt || new Date().toISOString(),
+        rejectionReason: data.rejectionReason,
+        sourceCollection: 'channel_submissions'
+      };
+
+      if (record.approvalStatus === 'approved') {
+        partnerMap.set(ownerUid, record);
+      } else if (record.approvalStatus === 'rejected') {
+        rejectedMap.set(ownerUid, record);
+      } else {
+        // Pending approval
+        pendingMap.set(ownerUid, record);
+      }
+    });
+  } catch (err) {
+    console.warn('Error reading channel_submissions:', err);
+  }
+
+  // 2. Read channels collection for active partners and legacy pending clean-up
+  try {
+    const chanSnap = await getDocs(collection(db, 'channels'));
+    chanSnap.forEach(docSnap => {
+      const data = docSnap.data() as any;
+      const ownerUid = data.ownerUid || data.uid || docSnap.id;
+      if (!ownerUid) return;
+
+      const isApproved = data.approvalStatus === 'approved' || data.status === 'approved' || data.isVerified === true;
+      const isPending = !isApproved && (data.approvalStatus === 'pending' || data.status === 'pending');
+
+      const rawPhoto = data.panPhotoUrl || data.panPhoto || data.panCardPhoto || data.panCardPhotoUrl || data.panFrontPhotoUrl || data.aadhaarPhotoUrl || data.kycPhotoUrl || '';
+      const chanName = data.name || data.channelName || 'बुंदेली चैनल';
+
+      if (isApproved) {
+        if (!partnerMap.has(ownerUid)) {
+          partnerMap.set(ownerUid, {
+            id: docSnap.id,
+            submissionId: docSnap.id,
+            channelId: docSnap.id,
+            ownerUid,
+            channelName: chanName,
+            channelHandle: data.handle || `@${chanName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+            channelAvatar: data.avatar || data.channelLogoUrl || data.logo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+            category: data.category || 'music',
+            mobileNumber: data.mobileNumber || '',
+            panCardHolderName: data.panCardHolderName || data.panName || '',
+            panNumber: data.panNumber || '',
+            panPhotoUrl: rawPhoto,
+            bankDetails: {
+              bankName: data.bankDetails?.bankName || data.bankName,
+              accountHolder: data.bankDetails?.accountHolder || data.panCardHolderName,
+              accountNumber: data.bankDetails?.accountNumber || data.accountNumber,
+              ifscCode: data.bankDetails?.ifscCode || data.ifscCode,
+              branchName: data.bankDetails?.branchName || data.branchName,
+              upiId: data.bankDetails?.upiId || data.upiId
+            },
+            approvalStatus: 'approved',
+            kycStatus: 'verified',
+            submittedAt: data.createdAt || data.joinedDate || new Date().toISOString(),
+            totalSubscribers: Number(data.subscribers || 0),
+            totalViews: Number(data.totalViews || 0),
+            totalAds: Number(data.totalAdImpressions || data.total_long_impressions || 0),
+            sourceCollection: 'channels'
+          });
+        }
+        // If partner already approved, remove any lingering pending entry
+        pendingMap.delete(ownerUid);
+      } else if (isPending && !partnerMap.has(ownerUid)) {
+        // If not already in pending from channel_submissions, add it
+        if (!pendingMap.has(ownerUid)) {
+          pendingMap.set(ownerUid, {
+            id: docSnap.id,
+            submissionId: docSnap.id,
+            channelId: docSnap.id,
+            ownerUid,
+            channelName: chanName,
+            channelHandle: data.handle || `@${chanName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+            channelAvatar: data.avatar || data.channelLogoUrl || data.logo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+            category: data.category || 'music',
+            mobileNumber: data.mobileNumber || '',
+            panCardHolderName: data.panCardHolderName || data.panName || '',
+            panNumber: data.panNumber || '',
+            panPhotoUrl: rawPhoto,
+            bankDetails: {
+              bankName: data.bankDetails?.bankName || data.bankName,
+              accountHolder: data.bankDetails?.accountHolder || data.panCardHolderName,
+              accountNumber: data.bankDetails?.accountNumber || data.accountNumber,
+              ifscCode: data.bankDetails?.ifscCode || data.ifscCode,
+              branchName: data.bankDetails?.branchName || data.branchName,
+              upiId: data.bankDetails?.upiId || data.upiId
+            },
+            approvalStatus: 'pending',
+            kycStatus: 'pending',
+            submittedAt: data.createdAt || new Date().toISOString(),
+            sourceCollection: 'channels'
+          });
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('Error reading channels:', err);
+  }
+
+  // 3. Read users collection to separate Normal Users (दर्शकों / व्यूवर्स) vs Creators
+  try {
+    const usersSnap = await getDocs(collection(db, 'users'));
+    usersSnap.forEach(docSnap => {
+      const u = docSnap.data() as any;
+      const uid = docSnap.id;
+      allUsersMap.set(uid, {
+        uid,
+        name: u.name || 'उपयोगकर्ता',
+        email: u.email || '',
+        avatar: u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        role: (partnerMap.has(uid) || u.role === 'creator') ? 'creator' : (u.role === 'admin' ? 'admin' : 'viewer'),
+        channelStatus: partnerMap.has(uid) ? 'approved' : (pendingMap.has(uid) ? 'pending' : (u.channelStatus || 'none')),
+        channelId: u.channelId || partnerMap.get(uid)?.id || pendingMap.get(uid)?.id,
+        channelName: u.channelName || partnerMap.get(uid)?.channelName || pendingMap.get(uid)?.channelName,
+        mobileNumber: u.mobileNumber || partnerMap.get(uid)?.mobileNumber || pendingMap.get(uid)?.mobileNumber || '',
+        createdAt: u.createdAt,
+        lastLoginAt: u.lastLoginAt
+      });
+    });
+  } catch (err) {
+    console.warn('Error reading users:', err);
+  }
+
+  // Normal users are those without an approved partner channel
+  const normalUsers: UserAccountSummary[] = [];
+  allUsersMap.forEach(user => {
+    if (!partnerMap.has(user.uid) && user.role !== 'admin') {
+      normalUsers.push(user);
+    }
+  });
+
+  return {
+    success: true,
+    pendingApplications: Array.from(pendingMap.values()),
+    partnerChannels: Array.from(partnerMap.values()),
+    normalUsers,
+    rejectedApplications: Array.from(rejectedMap.values()),
+    counts: {
+      pending: pendingMap.size,
+      partners: partnerMap.size,
+      normalUsers: normalUsers.length,
+      rejected: rejectedMap.size
+    }
+  };
+}
+
+/**
+ * Approve a channel application: Promotes applicant to active BundeliTube Partner Program creator
+ */
+export async function approveChannelApplication(id: string, adminNote?: string) {
+  let targetSub: any = null;
+  let targetDocId = id;
+
+  // Find document in channel_submissions
+  const subRef = doc(db, 'channel_submissions', id);
+  const subSnap = await getDoc(subRef).catch(() => null);
+
+  if (subSnap && subSnap.exists()) {
+    targetSub = subSnap.data();
+    targetDocId = subSnap.id;
+  } else {
+    // Look up by ownerUid
+    const q = query(collection(db, 'channel_submissions'), where('ownerUid', '==', id));
+    const qs = await getDocs(q).catch(() => null);
+    if (qs && !qs.empty) {
+      targetSub = qs.docs[0].data();
+      targetDocId = qs.docs[0].id;
+    } else {
+      // Look in channels collection
+      const chanSnap = await getDoc(doc(db, 'channels', id)).catch(() => null);
+      if (chanSnap && chanSnap.exists()) {
+        targetSub = chanSnap.data();
+        targetDocId = chanSnap.id;
+      }
+    }
+  }
+
+  if (!targetSub) {
+    throw new Error(`Channel application not found for ID: ${id}`);
+  }
+
+  const ownerUid = targetSub.ownerUid || targetSub.uid || id;
+  const chanName = targetSub.channelName || targetSub.name || 'बुंदेली चैनल';
+  const cleanSegment = chanName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'CREATOR';
+  const mobileClean = (targetSub.mobileNumber || targetSub.phone || '').replace(/\D/g, '');
+  const last4 = mobileClean.slice(-4) || ownerUid.slice(-4).toUpperCase() || '2026';
+  const finalChanId = (targetDocId && targetDocId.startsWith('BT-CH-')) ? targetDocId : `BT-CH-${cleanSegment}-${last4}`;
+
+  const rawPhoto = targetSub.panPhotoUrl || targetSub.panPhoto || targetSub.panCardPhoto || targetSub.panCardPhotoUrl || targetSub.panFrontPhotoUrl || targetSub.aadhaarPhotoUrl || targetSub.frontPhotoUrl || targetSub.kycPhotoUrl || '';
+  const effectiveAvatar = targetSub.channelAvatar || targetSub.channelLogoUrl || targetSub.avatarUrl || targetSub.avatar || targetSub.logo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+
+  // 1. Update channel_submissions to approved
+  await setDoc(doc(db, 'channel_submissions', targetDocId), {
+    ...targetSub,
+    id: finalChanId,
+    status: 'approved',
+    approvalStatus: 'approved',
+    kycStatus: 'verified',
+    approvedAt: new Date().toISOString(),
+    adminNote: adminNote || 'Admin website approved'
+  }, { merge: true });
+
+  // 2. Provision active channel in channels collection
+  await setDoc(doc(db, 'channels', finalChanId), {
+    id: finalChanId,
+    ownerUid,
+    name: chanName,
+    handle: targetSub.channelHandle || targetSub.handle || `@${chanName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+    avatar: effectiveAvatar,
+    channelLogoUrl: effectiveAvatar,
+    logo: effectiveAvatar,
+    banner: targetSub.banner || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&auto=format&fit=crop&q=80',
+    subscribers: Number(targetSub.subscribers || 0),
+    totalViews: Number(targetSub.totalViews || 0),
+    videoCount: Number(targetSub.videoCount || 0),
+    cpmRate: Number(targetSub.cpmRate || 35.00),
+    isVerified: true,
+    approvalStatus: 'approved',
+    kycStatus: 'verified',
+    status: 'approved',
+    partnerProgramStatus: 'active',
+    category: targetSub.category || 'music',
+    mobileNumber: mobileClean,
+    panCardHolderName: targetSub.panCardHolderName || targetSub.panName || '',
+    panNumber: targetSub.panNumber || targetSub.panCardNumber || '',
+    panPhotoUrl: rawPhoto,
+    bankDetails: targetSub.bankDetails || {
+      bankName: targetSub.bankName,
+      accountHolder: targetSub.accountHolder || targetSub.panCardHolderName,
+      accountNumber: targetSub.accountNumber,
+      ifscCode: targetSub.ifscCode,
+      branchName: targetSub.branchName,
+      upiId: targetSub.upiId
+    },
+    approvedAt: new Date().toISOString(),
+    createdAt: targetSub.createdAt || targetSub.submittedAt || new Date().toISOString()
+  }, { merge: true });
+
+  // 3. Clean up any duplicate legacy documents in channels collection
+  if (finalChanId !== `chan-${ownerUid}`) {
+    deleteDoc(doc(db, 'channels', `chan-${ownerUid}`)).catch(() => {});
+  }
+  if (finalChanId !== ownerUid) {
+    deleteDoc(doc(db, 'channels', ownerUid)).catch(() => {});
+  }
+
+  // 4. Update user profile to creator
+  await setDoc(doc(db, 'users', ownerUid), {
+    role: 'creator',
+    channelStatus: 'approved',
+    approvalStatus: 'approved',
+    partnerProgramStatus: 'active',
+    channelId: finalChanId,
+    channelName: chanName,
+    avatar: effectiveAvatar,
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
+
+  // 5. Ensure wallet is initialized
+  const walletRef = doc(db, 'wallets', ownerUid);
+  const wDoc = await getDoc(walletRef).catch(() => null);
+  if (!wDoc || !wDoc.exists()) {
+    await setDoc(walletRef, {
+      creatorUid: ownerUid,
+      channelId: finalChanId,
+      currentBalance: 0,
+      walletBalance: 0,
+      totalEarned: 0,
+      totalWithdrawn: 0,
+      minWithdrawalLimit: 5000,
+      createdAt: new Date().toISOString(),
+      lastUpdated: new Date().toISOString()
+    }, { merge: true });
+  }
+
+  return {
+    success: true,
+    message: `चैनल "${chanName}" (ID: ${finalChanId}) को बुन्देली ट्यूब पार्टनर प्रोग्राम में सफलतापूर्वक अनुमोदित किया गया।`,
+    channelId: finalChanId,
+    ownerUid
+  };
+}
+
+/**
+ * Reject a channel application
+ */
+export async function rejectChannelApplication(id: string, reason?: string) {
+  const subRef = doc(db, 'channel_submissions', id);
+  const subSnap = await getDoc(subRef).catch(() => null);
+
+  let ownerUid = id;
+  if (subSnap && subSnap.exists()) {
+    ownerUid = subSnap.data().ownerUid || id;
+    await updateDoc(subRef, {
+      status: 'rejected',
+      approvalStatus: 'rejected',
+      kycStatus: 'not_submitted',
+      rejectionReason: reason || 'केवाईसी / पहचान विवरण का सत्यापन पूर्ण नहीं हो सका।',
+      rejectedAt: new Date().toISOString()
+    }).catch(() => null);
+  }
+
+  // Remove pending channel from channels
+  deleteDoc(doc(db, 'channels', id)).catch(() => {});
+  deleteDoc(doc(db, 'channels', `chan-${ownerUid}`)).catch(() => {});
+  deleteDoc(doc(db, 'channels', ownerUid)).catch(() => {});
+
+  // Set user role to viewer
+  await setDoc(doc(db, 'users', ownerUid), {
+    role: 'viewer',
+    channelStatus: 'rejected',
+    partnerProgramStatus: 'rejected',
+    rejectionReason: reason || 'केवाईसी सत्यापन विफल',
+    updatedAt: new Date().toISOString()
+  }, { merge: true }).catch(() => null);
+
+  return {
+    success: true,
+    message: `चैनल आवेदन (ID: ${id}) को अस्वीकार कर दिया गया।`,
+    id
+  };
+}
+
 

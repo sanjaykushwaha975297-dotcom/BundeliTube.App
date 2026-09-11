@@ -12,7 +12,11 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  updateDoc 
+  updateDoc,
+  collection,
+  query,
+  where,
+  getDocs
 } from '../lib/firebase';
 import { BundeliLogo } from './BundeliLogo';
 
@@ -97,29 +101,58 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
 
       if (channelStatus === 'none') {
-        const chanDocSnap = await getDoc(doc(db, 'channels', `chan-${fbUser.uid}`));
-        if (chanDocSnap.exists()) {
-          const cd = chanDocSnap.data();
-          channelStatus = (cd.status === 'approved' || cd.approvalStatus === 'approved') ? 'approved' : 'pending';
-          userChannelId = chanDocSnap.id;
-          channelHandle = cd.handle || cleanHandle;
-          role = 'creator';
-        } else {
-          const chanUidSnap = await getDoc(doc(db, 'channels', fbUser.uid));
-          if (chanUidSnap.exists()) {
-            const cd = chanUidSnap.data();
+        // 1. Check if existing user doc had a channelId
+        if (existingUserData?.channelId) {
+          const directChanSnap = await getDoc(doc(db, 'channels', existingUserData.channelId)).catch(() => null);
+          if (directChanSnap && directChanSnap.exists()) {
+            const cd = directChanSnap.data();
             channelStatus = (cd.status === 'approved' || cd.approvalStatus === 'approved') ? 'approved' : 'pending';
-            userChannelId = chanUidSnap.id;
+            userChannelId = directChanSnap.id;
             channelHandle = cd.handle || cleanHandle;
-            role = 'creator';
+            role = channelStatus === 'approved' ? 'creator' : 'viewer';
           } else {
-            const subDocSnap = await getDoc(doc(db, 'channel_submissions', fbUser.uid));
-            if (subDocSnap.exists()) {
-              const sd = subDocSnap.data();
+            const directSubSnap = await getDoc(doc(db, 'channel_submissions', existingUserData.channelId)).catch(() => null);
+            if (directSubSnap && directSubSnap.exists()) {
+              const sd = directSubSnap.data();
               channelStatus = (sd.status === 'approved' || sd.approvalStatus === 'approved') ? 'approved' : 'pending';
-              userChannelId = subDocSnap.id;
+              userChannelId = directSubSnap.id;
               channelHandle = sd.handle || sd.channelHandle || cleanHandle;
-              role = 'creator';
+              role = channelStatus === 'approved' ? 'creator' : 'viewer';
+            }
+          }
+        }
+
+        // 2. Query channel_submissions by ownerUid
+        if (channelStatus === 'none') {
+          const subQuery = query(collection(db, 'channel_submissions'), where('ownerUid', '==', fbUser.uid));
+          const subSnap = await getDocs(subQuery).catch(() => null);
+          if (subSnap && !subSnap.empty) {
+            const firstSub = subSnap.docs[0];
+            const sd = firstSub.data();
+            channelStatus = (sd.status === 'approved' || sd.approvalStatus === 'approved') ? 'approved' : 'pending';
+            userChannelId = firstSub.id;
+            channelHandle = sd.handle || sd.channelHandle || cleanHandle;
+            role = channelStatus === 'approved' ? 'creator' : 'viewer';
+          }
+        }
+
+        // 3. Fallback check legacy doc IDs
+        if (channelStatus === 'none') {
+          const chanDocSnap = await getDoc(doc(db, 'channels', `chan-${fbUser.uid}`)).catch(() => null);
+          if (chanDocSnap && chanDocSnap.exists()) {
+            const cd = chanDocSnap.data();
+            channelStatus = (cd.status === 'approved' || cd.approvalStatus === 'approved') ? 'approved' : 'pending';
+            userChannelId = chanDocSnap.id;
+            channelHandle = cd.handle || cleanHandle;
+            role = channelStatus === 'approved' ? 'creator' : 'viewer';
+          } else {
+            const chanUidSnap = await getDoc(doc(db, 'channels', fbUser.uid)).catch(() => null);
+            if (chanUidSnap && chanUidSnap.exists()) {
+              const cd = chanUidSnap.data();
+              channelStatus = (cd.status === 'approved' || cd.approvalStatus === 'approved') ? 'approved' : 'pending';
+              userChannelId = chanUidSnap.id;
+              channelHandle = cd.handle || cleanHandle;
+              role = channelStatus === 'approved' ? 'creator' : 'viewer';
             }
           }
         }
