@@ -264,6 +264,7 @@ app.post("/api/upload-app-logo", upload.single("logo"), async (req: Request, res
     // Keep legacy fallback names synced
     fs.copyFileSync(path.join(publicDir, "logo-app-512.png"), path.join(publicDir, "icon-512.png"));
     fs.copyFileSync(path.join(publicDir, "logo-app-192.png"), path.join(publicDir, "icon-192.png"));
+    fs.copyFileSync(path.join(publicDir, "logo-app-512.png"), path.join(publicDir, "logo.png"));
 
     console.log("Original logo uploaded and resized to 512x512 & 192x192 with original aspect ratio!");
     return res.json({ success: true, message: "Logo processed successfully" });

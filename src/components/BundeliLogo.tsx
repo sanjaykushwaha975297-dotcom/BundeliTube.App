@@ -19,7 +19,18 @@ export const BundeliLogo: React.FC<BundeliLogoProps> = ({
   logoUrl,
   appName = APP_LOGO_CONFIG.appName || 'BundeliTube'
 }) => {
-  const defaultLocalCandidates = React.useMemo(() => ['/logo.png', '/logo.jpg', '/logo.jpeg', '/logo.webp', '/logo.svg'], []);
+  const defaultLocalCandidates = React.useMemo(() => [
+    '/logo.png',
+    '/logo-app-512.png',
+    '/icon-512.png',
+    '/logo-app-192.png',
+    '/icon-192.png',
+    '/1.png',
+    '/logo.jpg',
+    '/logo.jpeg',
+    '/logo.webp',
+    '/logo.svg'
+  ], []);
   const [candidateIdx, setCandidateIdx] = React.useState(0);
   const [imgError, setImgError] = React.useState(false);
 
@@ -338,7 +349,7 @@ export const BundeliLogo: React.FC<BundeliLogoProps> = ({
             src={effectiveLogoUrl}
             alt={appName}
             onError={handleImageError}
-            className={`object-contain ${dim.maxH} ${customLogoMaxW} w-auto h-auto drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] transition-transform duration-200 group-hover:scale-105`}
+            className={`object-contain ${dim.maxH} ${customLogoMaxW} w-auto h-8 sm:h-9 drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] transition-transform duration-200 group-hover:scale-105`}
             referrerPolicy="no-referrer"
           />
         </div>
