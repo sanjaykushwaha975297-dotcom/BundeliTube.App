@@ -20,6 +20,8 @@ export interface Video {
   channelName: string;
   channelAvatar: string;
   creatorId?: string;
+  creatorUid?: string;
+  ownerUid?: string;
   status?: 'published' | 'pending' | 'approved' | 'rejected' | 'archived';
   isShort?: boolean;
   videoType?: 'video' | 'short';
@@ -471,6 +473,9 @@ export interface RemoteAppConfig {
   lastAdDistributionAds?: number;
   lastAdDistributionDate?: string;
   currentAdRate?: number;
+  // Security & Anti-Fraud Config
+  disableAutoWalletCredit?: boolean;
+  monetizationMode?: 'admin_batch_distribution' | 'client_instant';
 }
 
 export interface AdRevenueDistributionBatch {

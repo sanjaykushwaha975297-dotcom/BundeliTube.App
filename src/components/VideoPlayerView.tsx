@@ -73,6 +73,7 @@ import { AdOverlay, SPONSOR_ADS } from './AdOverlay';
 import { AD_POOL, AdPoolItem, ActiveAdQueueItem } from './MonetizedVideoScreen';
 import { processInStreamVideoAdRevenue, recordLongVideoAdImpression, RevenueTransactionRecord } from '../lib/revenueService';
 import { VideoPlayerAdMobUnit } from './VideoPlayerAdMobUnit';
+import { isSelfViewFraud } from '../lib/monetizationSecurity';
 import { 
   recordVideoView, 
   recordVideoLike, 
@@ -549,9 +550,18 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       ? (currentAdItem.queueIndex === 1 ? 'double_ad_first' : 'double_ad_second')
       : (ad.format === 'skippable' ? 'skippable' : 'non_skippable');
 
+    // 🛡️ ANTI-FRAUD & SELF-VIEW CHECK:
+    // If the viewer is the creator or channel owner of this video,
+    // do NOT count ad impression or trigger monetization revenue.
+    const isSelf = isSelfViewFraud(currentUser?.id, video, (currentUser as any)?.channelId);
+    if (isSelf) {
+      console.warn(`[AntiFraud] Self-view detected on video ${video.id} by creator ${currentUser?.id}. Ad impression and monetization skipped.`);
+      return;
+    }
+
     // 1. Requirement: LONG VIDEO ADS:
     // When a user watches a long video and a video-watch ad successfully loads and shows (Ad Impression),
-    // immediately update Firebase for that specific video's creator by incrementing total_long_impressions by +1.
+    // update Firebase for that specific video's creator by incrementing total_long_impressions by +1.
     const targetCreatorId = video.creatorId || video.channelId || 'creator-1';
     recordLongVideoAdImpression({
       videoId: video.id,
@@ -559,7 +569,10 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       channelId: video.channelId || targetCreatorId,
       channelName: video.channelName || video.artist || 'चैनल',
       sponsorBrand: ad.brandName,
-      adFormat: formatType
+      adFormat: formatType,
+      viewerUserId: currentUser?.id,
+      viewerChannelId: (currentUser as any)?.channelId,
+      isSelfView: false
     }).catch(e => console.warn('recordLongVideoAdImpression call warning:', e));
 
     processInStreamVideoAdRevenue({
@@ -569,7 +582,10 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       channelName: video.channelName || video.artist || 'चैनल',
       videoId: video.id,
       sponsorBrand: ad.brandName,
-      adFormat: formatType
+      adFormat: formatType,
+      viewerUserId: currentUser?.id,
+      viewerChannelId: (currentUser as any)?.channelId,
+      isSelfView: false
     }).then(splitRecord => {
       setLastSplitRecord(splitRecord);
       if (onAdImpressionCredited) {
@@ -584,7 +600,7 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
     }).catch(err => {
       console.warn('InStream ad revenue split warning:', err);
     });
-  }, [currentAdItem, isAdContainerOpen, video.id, video.creatorId, video.channelId, video.artist, video.channelName, video.title]);
+  }, [currentAdItem, isAdContainerOpen, video.id, video.creatorId, video.channelId, video.artist, video.channelName, video.title, currentUser, onAdImpressionCredited]);
 
   /**
    * Ad countdown and timer tick
@@ -800,9 +816,17 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
     // Trigger starting Pre-Roll Ad immediately on video load
     triggerAdBreak('pre-roll', 0);
 
-    // Record video view to Firebase & update watch history (with duplicate prevention)
+    // Record video view to Firebase & update watch history (with anti-fraud self-view block)
     recordVideoView(
-      { id: video.id, title: video.title, channelName: video.channelName, channelId: video.channelId },
+      { 
+        id: video.id, 
+        title: video.title, 
+        channelName: video.channelName, 
+        channelId: video.channelId,
+        creatorId: video.creatorId,
+        creatorUid: (video as any).creatorUid,
+        ownerUid: (video as any).ownerUid
+      },
       currentUser
     );
 
@@ -1872,6 +1896,7 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                 video={video}
                 language={language}
                 variant="below_player"
+                currentUser={currentUser}
                 onAdImpression={onAdImpressionCredited ? ({ creatorShare, adminShare }) => {
                   onAdImpressionCredited({
                     impressionValue: Number((creatorShare + adminShare).toFixed(2)),
@@ -2287,6 +2312,7 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                           video={item}
                           language={language}
                           variant="in_feed"
+                          currentUser={currentUser}
                         />
                       )}
                     </React.Fragment>
@@ -2345,6 +2371,7 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                       video={item}
                       language={language}
                       variant="in_feed"
+                      currentUser={currentUser}
                     />
                   )}
                 </React.Fragment>

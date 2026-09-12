@@ -2,13 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ExternalLink, ShieldCheck, Info, Sparkles, X, ChevronRight, CheckCircle2, SkipForward, Clock } from 'lucide-react';
 import { Language } from '../locales/i18n';
 import { processCompliantAdMobRevenue, processBannerAdRevenue } from '../lib/revenueService';
-import { Video } from '../types';
+import { Video, UserAccount } from '../types';
+import { isSelfViewFraud } from '../lib/monetizationSecurity';
 
 export interface VideoPlayerAdMobUnitProps {
   video: Video;
   language: Language;
   variant?: 'below_player' | 'in_feed' | 'compact_companion';
   admobUnitId?: string;
+  currentUser?: UserAccount | null;
   onAdImpression?: (earning: { creatorShare: number; adminShare: number }) => void;
 }
 
@@ -179,6 +181,7 @@ export const VideoPlayerAdMobUnit: React.FC<VideoPlayerAdMobUnitProps> = ({
   language,
   variant = 'below_player',
   admobUnitId = variant === 'in_feed' ? 'ca-app-pub-5666532653138550/1582894537' : 'ca-app-pub-5666532653138550/9305658265',
+  currentUser,
   onAdImpression
 }) => {
   // -------------------------------------------------------------
@@ -265,6 +268,12 @@ export const VideoPlayerAdMobUnit: React.FC<VideoPlayerAdMobUnitProps> = ({
 
   // Process 50:50 Revenue Split for Below-Player Ad Impression
   const triggerImpressionSplit = (creativeItem: SponsorCreative, adNum: number) => {
+    // 🛡️ ANTI-FRAUD CHECK: Prevent creator from earning revenue from watching their own video
+    if (isSelfViewFraud(currentUser?.id, video, (currentUser as any)?.channelId)) {
+      console.warn(`[AntiFraud] Self-view detected on video ${video.id} by creator ${currentUser?.id}. AdMob impression revenue split skipped.`);
+      return;
+    }
+
     const impressionKey = `${video.id}-${creativeItem.id}-${adNum}-${Date.now()}`;
     if (loggedAdImpressionsRef.current.has(impressionKey)) return;
     loggedAdImpressionsRef.current.add(impressionKey);
@@ -281,7 +290,10 @@ export const VideoPlayerAdMobUnit: React.FC<VideoPlayerAdMobUnitProps> = ({
       videoTitle: video.title,
       sponsorBrand: creativeItem.brandName,
       placement: 'below_player_banner',
-      admobUnitId
+      admobUnitId,
+      viewerUserId: currentUser?.id,
+      viewerChannelId: (currentUser as any)?.channelId,
+      isSelfView: false
     }).then((record) => {
       const cShare = record.creatorShares[0]?.shareAmount || Number((amount * 0.50).toFixed(2));
       const aShare = record.adminShare || Number((amount * 0.50).toFixed(2));

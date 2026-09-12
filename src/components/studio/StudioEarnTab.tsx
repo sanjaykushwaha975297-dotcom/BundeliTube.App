@@ -205,6 +205,16 @@ export const StudioEarnTab: React.FC<StudioEarnTabProps> = ({
             </span>
           </div>
 
+          {/* Admin Panel Revenue Verification Note */}
+          <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center gap-2.5 text-xs">
+            <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0" />
+            <span className="text-[11px] text-slate-300">
+              {language === 'hi'
+                ? '💡 विज्ञापन एवं वीडियो प्रदर्शन की कमाई व्यवस्थापक एडमिन पैनल द्वारा जाँची जाकर सीधे आपके वॉलेट में क्रेडिट की जाती है।'
+                : '💡 Ad and video performance earnings are verified and credited directly to your wallet via the Admin Panel.'}
+            </span>
+          </div>
+
           {/* Quick Ways You Earn */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
             <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">

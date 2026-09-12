@@ -389,6 +389,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   <CheckCircle2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   <span>{language === 'hi' ? 'निकासी विंडो: प्रत्येक माह 1 से 5 तारीख तक, एडमिन द्वारा मैन्युअल नियंत्रण में।' : 'Payout Window: 1st to 5th of every month, manually controlled by Admin.'}</span>
                 </li>
+                <li className="flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                  <span>{language === 'hi' ? 'पारदर्शी पेआउट: सभी विज्ञापन व वीडियो कमाई सीधे एडमिन पैनल द्वारा जाँची जाकर आपके वॉलेट में जोड़ी जाती है।' : 'Transparent Payout: All ad & video revenue is verified and credited directly to your wallet via the Admin Panel.'}</span>
+                </li>
               </ul>
               {onOpenPolicies && (
                 <div className="pt-1 border-t border-slate-200 dark:border-slate-800 flex justify-end">

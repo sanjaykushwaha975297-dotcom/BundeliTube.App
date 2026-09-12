@@ -18,6 +18,7 @@ import {
 } from './firebase';
 import { safeStorage } from './safeStorage';
 import { ShortAdPoolRecord, AdRevenueDistributionBatch, ChannelSubmission } from '../types';
+import { isSelfViewFraud } from './monetizationSecurity';
 
 export interface ActivityEventLog {
   type: 'view' | 'ad';
@@ -145,7 +146,19 @@ export function getCreator24HourTotals(creatorId: string, videos: any[] = []) {
 /**
  * Record a video view (increments video views and updates 24h activity window)
  */
-export function recordVideoView(videoId: string, creatorId?: string, channelName?: string) {
+export function recordVideoView(
+  videoId: string, 
+  creatorId?: string, 
+  channelName?: string,
+  viewerUserId?: string,
+  viewerChannelId?: string
+) {
+  // 🛡️ Block self-views from inflating view counts
+  if (isSelfViewFraud(viewerUserId, { creatorId }, viewerChannelId)) {
+    console.warn(`[AntiFraud] Self-view detected for video ${videoId}. Views increment ignored.`);
+    return;
+  }
+
   addActivityEvent({
     type: 'view',
     videoId,
@@ -169,8 +182,11 @@ export function recordVideoView(videoId: string, creatorId?: string, channelName
 /**
  * 1. LONG VIDEO ADS IMPRESSION LOGIC
  * When a user watches a long video and a video-watch ad successfully loads and shows (Ad Impression),
- * the app must immediately update the Firebase database for that specific video's creator
+ * the app updates the Firebase database for that specific video's creator
  * by incrementing their total_long_impressions count by +1.
+ * 
+ * 🛡️ ANTI-FRAUD RULE:
+ * If viewer is the creator (self-view), ad impressions and metrics are STRICTLY BLOCKED.
  */
 export async function recordLongVideoAdImpression(params: {
   videoId: string;
@@ -179,6 +195,9 @@ export async function recordLongVideoAdImpression(params: {
   channelName?: string;
   sponsorBrand?: string;
   adFormat?: string;
+  viewerUserId?: string;
+  viewerChannelId?: string;
+  isSelfView?: boolean;
 }): Promise<void> {
   const { 
     videoId, 
@@ -186,8 +205,17 @@ export async function recordLongVideoAdImpression(params: {
     channelId = creatorId, 
     channelName, 
     sponsorBrand = 'Ad Partner', 
-    adFormat = 'in_stream' 
+    adFormat = 'in_stream',
+    viewerUserId,
+    viewerChannelId,
+    isSelfView
   } = params;
+
+  // 🛡️ ANTI-FRAUD CHECK: Block creator from inflating their own ad impressions
+  if (isSelfView || isSelfViewFraud(viewerUserId, { creatorId, channelId }, viewerChannelId)) {
+    console.warn(`[AntiFraud] Self-view detected on video ${videoId} by creator ${viewerUserId || creatorId}. total_long_impressions NOT incremented.`);
+    return;
+  }
 
   addActivityEvent({
     type: 'ad',
@@ -284,6 +312,7 @@ export async function recordLongVideoAdImpression(params: {
 /**
  * Record a video ad impression (increments ad impressions and updates 24h activity window)
  * Does NOT distribute automated wallet balance.
+ * 🛡️ Anti-fraud: Blocks self-views from inflating ad metrics.
  */
 export function recordVideoAdImpression(params: {
   videoId: string;
@@ -291,8 +320,26 @@ export function recordVideoAdImpression(params: {
   channelName?: string;
   sponsorBrand?: string;
   adFormat?: string;
+  viewerUserId?: string;
+  viewerChannelId?: string;
+  isSelfView?: boolean;
 }) {
-  const { videoId, creatorId, channelName, sponsorBrand = 'Ad Partner', adFormat = 'in_stream' } = params;
+  const { 
+    videoId, 
+    creatorId, 
+    channelName, 
+    sponsorBrand = 'Ad Partner', 
+    adFormat = 'in_stream',
+    viewerUserId,
+    viewerChannelId,
+    isSelfView
+  } = params;
+
+  // 🛡️ ANTI-FRAUD CHECK: Block creator from inflating their own ad metrics
+  if (isSelfView || isSelfViewFraud(viewerUserId, { creatorId }, viewerChannelId)) {
+    console.warn(`[AntiFraud] Self-view detected on video ${videoId}. Ad impression metric NOT incremented.`);
+    return;
+  }
 
   addActivityEvent({
     type: 'ad',
@@ -630,6 +677,9 @@ export async function processInStreamVideoAdRevenue(params: {
   videoTitle?: string;
   sponsorBrand?: string;
   adFormat?: 'skippable' | 'non_skippable' | 'double_ad_first' | 'double_ad_second';
+  viewerUserId?: string;
+  viewerChannelId?: string;
+  isSelfView?: boolean;
 }): Promise<RevenueTransactionRecord> {
   const {
     totalAmount,
@@ -639,13 +689,34 @@ export async function processInStreamVideoAdRevenue(params: {
     videoId = '',
     videoTitle = '',
     sponsorBrand = 'Bundelkhand Sponsor',
-    adFormat = 'skippable'
+    adFormat = 'skippable',
+    viewerUserId,
+    viewerChannelId,
+    isSelfView
   } = params;
 
   const adminShare = Number((totalAmount * 0.50).toFixed(2));
   const creatorShare = Number((totalAmount * 0.50).toFixed(2));
   const transactionId = `rev-instream-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const timestamp = new Date().toISOString();
+
+  // 🛡️ ANTI-FRAUD CHECK: Block creator from earning monetization from watching their own video
+  if (isSelfView || isSelfViewFraud(viewerUserId, { creatorId, channelId: creatorId }, viewerChannelId)) {
+    console.warn(`[AntiFraud] Self-view detected for in-stream ad on video ${videoId}. Ad revenue split aborted.`);
+    return {
+      transactionId,
+      adType: 'in_stream_video',
+      adFormat,
+      sponsorBrand,
+      totalAmount: 0,
+      adminShare: 0,
+      adminSharePercentage: 50,
+      creatorShares: [],
+      videoId,
+      videoTitle,
+      timestamp
+    };
+  }
 
   const record: RevenueTransactionRecord = {
     transactionId,
@@ -672,7 +743,7 @@ export async function processInStreamVideoAdRevenue(params: {
   try {
     const db = getFirestoreSafe();
 
-    // 1. Immediately update Firebase for creator's total_long_impressions + 1 and update metrics
+    // 1. Update Firebase for creator's total_long_impressions + 1 and update metrics (only for genuine viewers)
     if (videoId) {
       await recordLongVideoAdImpression({
         videoId,
@@ -680,7 +751,10 @@ export async function processInStreamVideoAdRevenue(params: {
         channelId: creatorId,
         channelName,
         sponsorBrand,
-        adFormat
+        adFormat,
+        viewerUserId,
+        viewerChannelId,
+        isSelfView: false
       }).catch(err => console.warn('recordLongVideoAdImpression error:', err));
     }
 
@@ -718,6 +792,8 @@ export async function processShortsFeedAdRevenue(params: {
   fallbackCreatorIds?: string[];
   activeShortId?: string;
   activeShortTitle?: string;
+  viewerUserId?: string;
+  viewerChannelId?: string;
 }): Promise<RevenueTransactionRecord> {
   const {
     totalAmount,
@@ -725,11 +801,13 @@ export async function processShortsFeedAdRevenue(params: {
     watchedVideos,
     fallbackCreatorIds = ['creator-1', 'creator-2', 'creator-3', 'creator-4', 'creator-5'],
     activeShortId = '',
-    activeShortTitle = ''
+    activeShortTitle = '',
+    viewerUserId,
+    viewerChannelId
   } = params;
 
-  // Retrieve the exact 5 watched videos whose creators receive the 50% revenue pool
-  const fiveWatched = (watchedVideos && watchedVideos.length >= 5)
+  // Retrieve the 5 watched videos and filter out self-watched shorts (anti-fraud)
+  const rawWatched = (watchedVideos && watchedVideos.length >= 5)
     ? watchedVideos.slice(-5)
     : shortsWatchedVideosTracker.getLast5WatchedVideos(
         fallbackCreatorIds.map(id => ({
@@ -740,6 +818,8 @@ export async function processShortsFeedAdRevenue(params: {
           channelName: `चैनल ${id.slice(-4)}`
         }))
       );
+
+  const fiveWatched = rawWatched.filter(v => !isSelfViewFraud(viewerUserId, { creatorId: v.creatorId }, viewerChannelId));
 
   // Admin Share: strictly 50%
   const adminShare = Number((totalAmount * 0.50).toFixed(2));
@@ -819,7 +899,9 @@ export async function processShortsFeedAdRevenue(params: {
           creatorId: wv.creatorId,
           channelName: wv.channelName,
           sponsorBrand,
-          adFormat: 'shorts_interstitial'
+          adFormat: 'shorts_interstitial',
+          viewerUserId,
+          viewerChannelId
         });
       }
     });
@@ -937,6 +1019,9 @@ export async function processCompliantAdMobRevenue(params: {
   sponsorBrand?: string;
   placement: 'below_player_banner' | 'related_feed_native' | 'comments_companion';
   admobUnitId?: string;
+  viewerUserId?: string;
+  viewerChannelId?: string;
+  isSelfView?: boolean;
 }): Promise<RevenueTransactionRecord> {
   const {
     totalAmount = 1.20,
@@ -947,14 +1032,34 @@ export async function processCompliantAdMobRevenue(params: {
     videoTitle = '',
     sponsorBrand = 'Google AdMob Premium Sponsor',
     placement,
-    admobUnitId = 'ca-app-pub-5666532653138550/9305658265'
+    admobUnitId = 'ca-app-pub-5666532653138550/9305658265',
+    viewerUserId,
+    viewerChannelId,
+    isSelfView
   } = params;
 
-  // 50% Creator Share / 50% Admin Share
   const creatorShare = Number((totalAmount * 0.50).toFixed(2));
   const adminShare = Number((totalAmount * 0.50).toFixed(2));
   const transactionId = `rev-admob-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const timestamp = new Date().toISOString();
+
+  // 🛡️ ANTI-FRAUD CHECK: Block creator from earning monetization from watching their own video
+  if (isSelfView || isSelfViewFraud(viewerUserId, { creatorId }, viewerChannelId)) {
+    console.warn(`[AntiFraud] Self-view detected for AdMob banner on video ${videoId}. Impression split skipped.`);
+    return {
+      transactionId,
+      adType: 'sponsored_card',
+      adFormat: 'display_banner',
+      sponsorBrand: `${sponsorBrand} (${admobUnitId})`,
+      totalAmount: 0,
+      adminShare: 0,
+      adminSharePercentage: 50,
+      creatorShares: [],
+      videoId,
+      videoTitle: `${videoTitle} [AdMob: ${placement}]`,
+      timestamp
+    };
+  }
 
   const record: RevenueTransactionRecord = {
     transactionId,

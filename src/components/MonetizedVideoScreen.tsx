@@ -35,6 +35,7 @@ import {
   recordLongVideoAdImpression,
   RevenueTransactionRecord 
 } from '../lib/revenueService';
+import { isSelfViewFraud } from '../lib/monetizationSecurity';
 
 export interface AdPoolItem {
   id: string;
@@ -349,6 +350,15 @@ export const MonetizedVideoScreen: React.FC<MonetizedVideoScreenProps> = ({
       });
     }
 
+    // 🛡️ ANTI-FRAUD & SELF-VIEW CHECK:
+    // If viewer is the creator or channel owner of this video,
+    // do NOT count ad impression or trigger monetization revenue.
+    const isSelf = isSelfViewFraud(currentUser?.id, video, channel?.id || (currentUser as any)?.channelId);
+    if (isSelf) {
+      console.warn(`[AntiFraud] Self-view detected on video ${video.id} in MonetizedVideoScreen. Monetization skipped.`);
+      return;
+    }
+
     // Process 50:50 Revenue Split for this Ad Impression
     const formatType = currentAdItem.totalInQueue === 2 
       ? (currentAdItem.queueIndex === 1 ? 'double_ad_first' : 'double_ad_second')
@@ -356,7 +366,7 @@ export const MonetizedVideoScreen: React.FC<MonetizedVideoScreenProps> = ({
 
     // 1. Requirement: LONG VIDEO ADS:
     // When a user watches a long video and a video-watch ad successfully loads and shows (Ad Impression),
-    // immediately update Firebase for that specific video's creator by incrementing total_long_impressions by +1.
+    // update Firebase for that specific video's creator by incrementing total_long_impressions by +1.
     const targetCreatorId = video.creatorId || video.channelId || 'bundeli-creator-1';
     recordLongVideoAdImpression({
       videoId: video.id,
@@ -364,7 +374,10 @@ export const MonetizedVideoScreen: React.FC<MonetizedVideoScreenProps> = ({
       channelId: video.channelId || targetCreatorId,
       channelName: video.channelName || video.artist || 'चैनल',
       sponsorBrand: ad.brandName,
-      adFormat: formatType
+      adFormat: formatType,
+      viewerUserId: currentUser?.id,
+      viewerChannelId: channel?.id || (currentUser as any)?.channelId,
+      isSelfView: false
     }).catch(e => console.warn('recordLongVideoAdImpression call warning:', e));
 
     processInStreamVideoAdRevenue({
@@ -375,7 +388,10 @@ export const MonetizedVideoScreen: React.FC<MonetizedVideoScreenProps> = ({
       videoId: video.id,
       videoTitle: video.title,
       sponsorBrand: ad.brandName,
-      adFormat: formatType
+      adFormat: formatType,
+      viewerUserId: currentUser?.id,
+      viewerChannelId: channel?.id || (currentUser as any)?.channelId,
+      isSelfView: false
     }).then(splitRecord => {
       setLastSplitRecord(splitRecord);
       if (onAdImpressionCredited) {
@@ -387,7 +403,7 @@ export const MonetizedVideoScreen: React.FC<MonetizedVideoScreenProps> = ({
       }
     });
 
-  }, [currentAdItem, isAdContainerOpen]);
+  }, [currentAdItem, isAdContainerOpen, video, currentUser, channel, onAdImpressionCredited]);
 
   /**
    * Ad countdown and progress interval

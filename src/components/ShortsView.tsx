@@ -424,7 +424,9 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
       sponsorBrand: 'AdMob Partner Sponsored Reel',
       watchedVideos: watched5,
       activeShortId: currentShort.id,
-      activeShortTitle: currentShort.title
+      activeShortTitle: currentShort.title,
+      viewerUserId: currentUser?.id,
+      viewerChannelId: (currentUser as any)?.channelId
     }).catch(e => console.warn('Shorts ad revenue error:', e));
 
     // Reset local 5-video interval buffer and reset counter

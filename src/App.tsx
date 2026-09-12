@@ -72,6 +72,7 @@ import {
   getDoc, 
   getDocs,
   setDoc,
+  updateDoc,
   deleteDoc,
   collection, 
   query, 
@@ -89,6 +90,7 @@ import {
   updateChannelLogoGlobally,
   fetchUserSubscriptionsFromFirestore
 } from './lib/firebase';
+import { isSelfViewFraud, canCreditWalletFromClient } from './lib/monetizationSecurity';
 import { harmonizeVideoAvatars, propagateChannelLogoAcrossState } from './lib/channelSync';
 import { 
   Play, 
@@ -726,8 +728,8 @@ export default function App() {
 
             // 6. Check user document channelStatus, channelName, or custom avatar
             if (!foundChannel && (userData?.channelStatus === 'pending' || userData?.channelStatus === 'approved' || userData?.channelName || userData?.channelId)) {
-              const isPendingStatus = userData?.channelStatus === 'pending' || userData?.approvalStatus === 'pending';
-              const isApp = !isPendingStatus && (userData?.channelStatus === 'approved' || userData?.approvalStatus === 'approved');
+              const isApp = userData?.channelStatus === 'approved' || userData?.approvalStatus === 'approved' || userData?.isApproved === true;
+              const isPendingStatus = !isApp && (userData?.channelStatus === 'pending' || userData?.approvalStatus === 'pending');
               const pendingChan: Channel = {
                 id: userData.channelId || `chan-${firebaseUser.uid}`,
                 name: userData.channelName || 'बुन्देली चैनल',
@@ -782,8 +784,8 @@ export default function App() {
               safeStorage.setJSON('bt_channel', cleanViewerChan);
             }
 
-            // Fetch this user's specific wallet from Firestore & reconcile with local earnings
-            const localWallet = safeStorage.getJSON<CreatorWallet>('bt_wallet', DEFAULT_EMPTY_WALLET);
+            // Fetch this user's specific wallet from Firestore
+            // 🛡️ ADMIN PANEL AUTHORITY: Firestore wallet document is the sole source of truth
             const walletDocSnap = await getDoc(doc(db, 'wallets', firebaseUser.uid)).catch(() => null);
             let finalWallet: CreatorWallet;
 
@@ -793,45 +795,23 @@ export default function App() {
               const firestoreLife = Number(wData.lifetimeEarnings ?? wData.totalEarned ?? firestoreBal);
               const firestoreWithdrawn = Number(wData.totalWithdrawn ?? 0);
 
-              // Safeguard: Never lose locally credited ad impression revenue
-              const bestBal = Math.max(firestoreBal, Number(localWallet?.currentBalance || 0));
-              const bestLife = Math.max(firestoreLife, Number(localWallet?.lifetimeEarnings || 0), bestBal);
-              const bestWithdrawn = Math.max(firestoreWithdrawn, Number(localWallet?.totalWithdrawn || 0));
-
-              // Combine transactions without duplicate IDs
-              const txMap = new Map<string, any>();
-              if (Array.isArray(wData.transactions)) {
-                wData.transactions.forEach((tx: any) => { if (tx?.id) txMap.set(tx.id, tx); });
-              }
-              if (Array.isArray(localWallet?.transactions)) {
-                localWallet.transactions.forEach((tx: any) => { if (tx?.id) txMap.set(tx.id, tx); });
-              }
-
               finalWallet = {
-                currentBalance: Number(bestBal.toFixed(2)),
-                totalWithdrawn: Number(bestWithdrawn.toFixed(2)),
-                lifetimeEarnings: Number(bestLife.toFixed(2)),
-                minWithdrawalLimit: Number(wData.minWithdrawalLimit || localWallet?.minWithdrawalLimit || 5000),
-                pendingClearance: Number(wData.pendingClearance || localWallet?.pendingClearance || 0),
-                transactions: Array.from(txMap.values())
+                currentBalance: Number(firestoreBal.toFixed(2)),
+                totalWithdrawn: Number(firestoreWithdrawn.toFixed(2)),
+                lifetimeEarnings: Number(firestoreLife.toFixed(2)),
+                minWithdrawalLimit: Number(wData.minWithdrawalLimit || 5000),
+                pendingClearance: Number(wData.pendingClearance || 0),
+                transactions: Array.isArray(wData.transactions) ? wData.transactions : []
               };
-            } else if (localWallet && (localWallet.currentBalance > 0 || localWallet.lifetimeEarnings > 0 || (localWallet.transactions && localWallet.transactions.length > 0))) {
-              finalWallet = localWallet;
             } else {
-              finalWallet = DEFAULT_CREATOR_WALLET;
+              const localWallet = safeStorage.getJSON<CreatorWallet>('bt_wallet', DEFAULT_EMPTY_WALLET);
+              finalWallet = (localWallet && (localWallet.currentBalance > 0 || localWallet.lifetimeEarnings > 0))
+                ? localWallet
+                : DEFAULT_CREATOR_WALLET;
             }
 
             setWallet(finalWallet);
             safeStorage.setJSON('bt_wallet', finalWallet);
-
-            // Persist harmonized wallet back to Firestore so it is permanently synchronized
-            setDoc(doc(db, 'wallets', firebaseUser.uid), cleanFirestoreData({
-              ...finalWallet,
-              walletBalance: finalWallet.currentBalance,
-              totalEarned: finalWallet.lifetimeEarnings,
-              lastUpdated: new Date().toISOString(),
-              serverTimestamp: serverTimestamp()
-            }), { merge: true }).catch(() => {});
           } catch (e) {
             console.warn('Firestore user fetch note:', e);
           }
@@ -870,24 +850,34 @@ export default function App() {
     if (!data) return;
     const statusStr = String(data.status || data.approvalStatus || data.kycStatus || data.channelStatus || '').toLowerCase();
     const isRejected = statusStr === 'rejected' || data.isRejected === true;
-    const isPending = !isRejected && (
-      statusStr === 'pending' || 
-      data.approvalStatus === 'pending' || 
-      data.channelStatus === 'pending' || 
-      data.status === 'pending'
-    );
-    const isExplicitlyApproved = !isPending && !isRejected && (
+
+    // 🛡️ ADMIN APPROVAL TAKES ABSOLUTE PRECEDENCE
+    const isExplicitlyApproved = !isRejected && (
       statusStr === 'approved' ||
       statusStr === 'verified' ||
       data.isApproved === true ||
       data.approved === true ||
       data.channelStatus === 'approved' ||
-      data.approvalStatus === 'approved'
+      data.approvalStatus === 'approved' ||
+      data.kycStatus === 'verified'
+    );
+
+    // Only pending if NOT approved and NOT rejected
+    const isPending = !isRejected && !isExplicitlyApproved && (
+      statusStr === 'pending' || 
+      data.approvalStatus === 'pending' || 
+      data.channelStatus === 'pending' || 
+      data.status === 'pending' ||
+      data.kycStatus === 'pending'
     );
 
     setChannel(prev => {
-      // Channel is approved ONLY if explicitly approved, and NEVER if pending or rejected
-      const isApproved = isExplicitlyApproved && !isPending && !isRejected;
+      // 🛡️ CRITICAL STABILITY RULE: Never downgrade an already approved channel back to pending
+      if (prev.approvalStatus === 'approved' && !isRejected && !isExplicitlyApproved) {
+        return prev;
+      }
+
+      const isApproved = isExplicitlyApproved || (prev.approvalStatus === 'approved' && !isRejected);
       const effectiveApprovalStatus = isApproved ? 'approved' : isRejected ? 'rejected' : 'pending';
       const effectiveKycStatus = isApproved ? 'verified' : isRejected ? 'not_submitted' : 'pending';
 
@@ -932,7 +922,7 @@ export default function App() {
       return nextChan;
     });
 
-    if (isExplicitlyApproved && !isPending && !isRejected) {
+    if (isExplicitlyApproved) {
       setCurrentUser(prevUser => {
         if (!prevUser) return null;
         if (prevUser.role === 'creator' && prevUser.channelStatus === 'approved' && prevUser.channelId === (docId || data.id)) {
@@ -948,9 +938,25 @@ export default function App() {
         safeStorage.setJSON('bt_user', nextUser);
         return nextUser;
       });
+
+      // Synchronize users/{ownerUid} in Firestore to prevent stale 'pending' reads
+      const ownerUid = data.ownerUid || data.uid || data.userId || currentUser?.id;
+      if (ownerUid) {
+        try {
+          const db = getFirestoreSafe();
+          updateDoc(doc(db, 'users', ownerUid), {
+            channelStatus: 'approved',
+            approvalStatus: 'approved',
+            role: 'creator',
+            channelId: docId || data.id,
+            isApproved: true
+          }).catch(() => {});
+        } catch (e) { /* ignore */ }
+      }
     } else if (isPending) {
       setCurrentUser(prevUser => {
         if (!prevUser) return null;
+        if (prevUser.channelStatus === 'approved') return prevUser; // Do NOT downgrade!
         if (prevUser.channelStatus === 'pending' && prevUser.channelId === (docId || data.id)) {
           return prevUser;
         }
@@ -1186,8 +1192,18 @@ export default function App() {
           if (userDoc.exists()) {
             const uData = userDoc.data();
             const uChanStatus = String(uData.channelStatus || uData.approvalStatus || uData.status || '').toLowerCase();
-            const isPending = uChanStatus === 'pending' || uData.approvalStatus === 'pending' || uData.channelStatus === 'pending';
-            const isApproved = !isPending && (uChanStatus === 'approved' || uData.approvalStatus === 'approved' || uData.isApproved === true);
+            const isURejected = uChanStatus === 'rejected' || uData.approvalStatus === 'rejected' || uData.channelStatus === 'rejected';
+            const isApproved = !isURejected && (
+              uChanStatus === 'approved' || 
+              uData.approvalStatus === 'approved' || 
+              uData.channelStatus === 'approved' ||
+              uData.isApproved === true
+            );
+            const isPending = !isURejected && !isApproved && (
+              uChanStatus === 'pending' || 
+              uData.approvalStatus === 'pending' || 
+              uData.channelStatus === 'pending'
+            );
 
             if (isApproved) {
               setChannel(prev => ({
@@ -1198,13 +1214,20 @@ export default function App() {
               }));
               setCurrentUser(prev => prev ? { ...prev, role: 'creator', channelStatus: 'approved' } : null);
             } else if (isPending) {
-              setChannel(prev => ({
-                ...prev,
-                approvalStatus: 'pending',
-                kycStatus: 'pending',
-                isVerified: false
-              }));
-              setCurrentUser(prev => prev ? { ...prev, channelStatus: 'pending' } : null);
+              // 🛡️ CRITICAL GUARD: Never downgrade an already approved channel back to pending
+              setChannel(prev => {
+                if (prev.approvalStatus === 'approved') return prev;
+                return {
+                  ...prev,
+                  approvalStatus: 'pending',
+                  kycStatus: 'pending',
+                  isVerified: false
+                };
+              });
+              setCurrentUser(prev => {
+                if (!prev || prev.channelStatus === 'approved') return prev;
+                return { ...prev, channelStatus: 'pending' };
+              });
             }
           }
         }, (err) => console.warn('User doc sync note:', err));
@@ -1395,8 +1418,18 @@ export default function App() {
         if (userDoc && userDoc.exists()) {
           const uData = userDoc.data();
           const uChanStatus = String(uData.channelStatus || uData.approvalStatus || uData.status || '').toLowerCase();
-          const isPending = uChanStatus === 'pending' || uData.approvalStatus === 'pending' || uData.channelStatus === 'pending';
-          const isApproved = !isPending && (uChanStatus === 'approved' || uData.approvalStatus === 'approved' || uData.isApproved === true);
+          const isURejected = uChanStatus === 'rejected' || uData.approvalStatus === 'rejected' || uData.channelStatus === 'rejected';
+          const isApproved = !isURejected && (
+            uChanStatus === 'approved' || 
+            uData.approvalStatus === 'approved' || 
+            uData.channelStatus === 'approved' ||
+            uData.isApproved === true
+          );
+          const isPending = !isURejected && !isApproved && (
+            uChanStatus === 'pending' || 
+            uData.approvalStatus === 'pending' || 
+            uData.channelStatus === 'pending'
+          );
 
           if (isApproved) {
             setChannel(prev => ({
@@ -1407,13 +1440,20 @@ export default function App() {
             }));
             setCurrentUser(prev => prev ? { ...prev, role: 'creator', channelStatus: 'approved' } : null);
           } else if (isPending) {
-            setChannel(prev => ({
-              ...prev,
-              approvalStatus: 'pending',
-              kycStatus: 'pending',
-              isVerified: false
-            }));
-            setCurrentUser(prev => prev ? { ...prev, channelStatus: 'pending' } : null);
+            // 🛡️ CRITICAL GUARD: Never downgrade an already approved channel back to pending
+            setChannel(prev => {
+              if (prev.approvalStatus === 'approved') return prev;
+              return {
+                ...prev,
+                approvalStatus: 'pending',
+                kycStatus: 'pending',
+                isVerified: false
+              };
+            });
+            setCurrentUser(prev => {
+              if (!prev || prev.channelStatus === 'approved') return prev;
+              return { ...prev, channelStatus: 'pending' };
+            });
           }
         }
 
@@ -1561,74 +1601,25 @@ export default function App() {
     });
   }, [channel.avatar, channel.name, channel.id, channelSubmissions]);
 
-  // Creator Monetization Ad Impression Creditor (Strictly only for approved creator who owns the video)
+  // Creator Monetization Ad Impression Handler
+  // 🛡️ SECURITY & ADMIN CONTROL MANDATE:
+  // As explicitly required: No automatic client-side earnings or wallet additions.
+  // All creator earnings are distributed exclusively through the Admin Panel website.
   const handleAdImpressionCredited = useCallback((arg: { impressionValue: number; creatorShare: number; videoId: string; creatorId?: string } | number) => {
     const creatorShare = typeof arg === 'number' ? Number(arg.toFixed(2)) : Number(arg.creatorShare.toFixed(2));
     const vidId = typeof arg === 'number' ? (selectedVideo?.id || 'vid-ad') : arg.videoId;
-
-    // Strict validation: Only credit wallet if user is an approved creator
-    if (!currentUser || currentUser.role !== 'creator' || channel.approvalStatus !== 'approved') {
-      return; // Viewers do not receive creator ad revenue
-    }
-
-    // Determine if current logged-in creator owns this video
     const targetVideo = videos.find(v => v.id === vidId) || (selectedVideo?.id === vidId ? selectedVideo : null);
-    const videoCreatorId = (typeof arg !== 'number' && arg.creatorId) || targetVideo?.creatorId || targetVideo?.channelId;
-    const isOwner = Boolean(
-      videoCreatorId && (
-        videoCreatorId === currentUser.id ||
-        videoCreatorId === channel.id ||
-        videoCreatorId === `chan-${currentUser.id}` ||
-        targetVideo?.channelId === channel.id
-      )
-    );
 
-    if (!isOwner) {
-      return; // Do not credit if creator is watching another creator's content
+    // 1. 🛡️ ANTI-FRAUD: Check if current viewer is the owner/creator of this video
+    if (currentUser?.id && targetVideo && isSelfViewFraud(currentUser.id, targetVideo, channel.id)) {
+      console.warn(`[AntiFraud] Blocked self-view monetization reward for creator ${currentUser.id} on video ${vidId}.`);
+      return;
     }
 
-    // Safely defer wallet update outside the active React render phase
-    setTimeout(() => {
-      setWallet(prev => {
-        const nextWallet: CreatorWallet = {
-          ...prev,
-          currentBalance: Number((prev.currentBalance + creatorShare).toFixed(2)),
-          lifetimeEarnings: Number((prev.lifetimeEarnings + creatorShare).toFixed(2)),
-          transactions: [
-            {
-              id: `tx-ad-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-              date: new Date().toLocaleDateString('hi-IN'),
-              amount: creatorShare,
-              type: 'earning',
-              status: 'completed',
-              payoutMethod: 'UPI',
-              targetAccount: 'Creator 50% Ad Share',
-              refId: `AD-${vidId.slice(-6).toUpperCase()}`,
-              note: language === 'hi' ? `क्रिएटर विज्ञापन शेयर (+₹${creatorShare.toFixed(2)})` : `Creator Ad Share (+₹${creatorShare.toFixed(2)})`
-            },
-            ...prev.transactions
-          ]
-        };
-        safeStorage.setJSON('bt_wallet', nextWallet);
-
-        // Atomically persist updated wallet to Firestore so balance never resets to 0 on refresh
-        if (currentUser?.id) {
-          try {
-            const db = getFirestoreSafe();
-            setDoc(doc(db, 'wallets', currentUser.id), cleanFirestoreData({
-              ...nextWallet,
-              walletBalance: nextWallet.currentBalance,
-              totalEarned: nextWallet.lifetimeEarnings,
-              lastUpdated: new Date().toISOString(),
-              serverTimestamp: serverTimestamp()
-            }), { merge: true }).catch((err) => console.warn('Firestore wallet ad impression update note:', err));
-          } catch (e) { /* ignore */ }
-        }
-
-        return nextWallet;
-      });
-    }, 0);
-  }, [language, selectedVideo, videos, currentUser, channel.id, channel.approvalStatus]);
+    // 2. 🛡️ CLIENT WRITE LOCK: Direct client-side wallet crediting is prohibited.
+    // All creator balances are granted exclusively by the external Admin Panel website.
+    console.log(`[Monetization] Ad impression logged for video ${vidId} (₹${creatorShare}). Earnings will be credited exclusively by the Admin Panel.`);
+  }, [selectedVideo, videos, currentUser, channel.id]);
 
   const handleInstallPWA = async () => {
     if (deferredInstallPrompt) {
@@ -1722,8 +1713,8 @@ export default function App() {
         if (userDoc && userDoc.exists()) {
           const ud = userDoc.data();
           if (ud.channelName || ud.channelId || ud.channelStatus === 'pending' || ud.channelStatus === 'approved') {
-            const isPending = ud.channelStatus === 'pending' || ud.approvalStatus === 'pending';
-            const isApproved = !isPending && (ud.channelStatus === 'approved' || ud.approvalStatus === 'approved');
+            const isApproved = ud.channelStatus === 'approved' || ud.approvalStatus === 'approved' || ud.isApproved === true;
+            const isPending = !isApproved && (ud.channelStatus === 'pending' || ud.approvalStatus === 'pending');
             const restoredChan: Channel = {
               id: ud.channelId || `chan-${user.id}`,
               name: ud.channelName || user.name,

@@ -38,6 +38,7 @@ import {
   increment,
   limit
 } from 'firebase/firestore';
+import { isSelfViewFraud } from './monetizationSecurity';
 
 export {
   signInWithPopup,
@@ -477,8 +478,16 @@ export async function fetchUserSubscriptionsFromFirestore(userId: string): Promi
 const recentViewCache = new Set<string>();
 
 export async function recordVideoView(
-  video: { id: string; title: string; channelName?: string; channelId?: string },
-  user?: { id?: string; name?: string; email?: string } | null
+  video: { 
+    id: string; 
+    title: string; 
+    channelName?: string; 
+    channelId?: string;
+    creatorId?: string;
+    creatorUid?: string;
+    ownerUid?: string;
+  },
+  user?: { id?: string; name?: string; email?: string; channelId?: string } | null
 ) {
   if (!video?.id) return;
   const viewKey = `${user?.id || 'anon'}_${video.id}`;
@@ -488,28 +497,36 @@ export async function recordVideoView(
   recentViewCache.add(viewKey);
   setTimeout(() => recentViewCache.delete(viewKey), 10 * 60 * 1000); // 10 minute cooldown per viewer
 
+  // 🛡️ ANTI-FRAUD CHECK: Block creator from inflating their own views or channels
+  const isSelfView = isSelfViewFraud(user?.id, video, user?.channelId);
+  if (isSelfView) {
+    console.warn(`[AntiFraud] Self-view detected on video ${video.id} by creator ${user?.id}. Video views and channel totalViews NOT incremented.`);
+  }
+
   try {
     const db = getFirestoreSafe();
     const nowIso = new Date().toISOString();
 
-    // 1. Increment view count in videos document
-    const videoRef = doc(db, 'videos', video.id);
-    await setDoc(videoRef, {
-      views: increment(1),
-      viewsCount: increment(1),
-      lastViewedAt: nowIso,
-      serverTimestamp: serverTimestamp()
-    }, { merge: true }).catch(() => {});
-
-    // 2. Increment totalViews on channel document
-    if (video.channelId) {
-      await setDoc(doc(db, 'channels', video.channelId), {
-        totalViews: increment(1),
+    // 1. Increment view count in videos document ONLY for genuine viewers (NOT self-view)
+    if (!isSelfView) {
+      const videoRef = doc(db, 'videos', video.id);
+      await setDoc(videoRef, {
+        views: increment(1),
+        viewsCount: increment(1),
+        lastViewedAt: nowIso,
         serverTimestamp: serverTimestamp()
       }, { merge: true }).catch(() => {});
+
+      // 2. Increment totalViews on channel document ONLY for genuine viewers (NOT self-view)
+      if (video.channelId) {
+        await setDoc(doc(db, 'channels', video.channelId), {
+          totalViews: increment(1),
+          serverTimestamp: serverTimestamp()
+        }, { merge: true }).catch(() => {});
+      }
     }
 
-    // 3. Add to unique 'video_views' collection
+    // 3. Add to unique 'video_views' collection with fraud-filtering flags
     const viewDocId = `view-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     await setDoc(doc(db, 'video_views', viewDocId), cleanFirestoreData({
       id: viewDocId,
@@ -520,6 +537,8 @@ export async function recordVideoView(
       viewerUserId: user?.id || 'guest_viewer',
       userName: user?.name || 'बुंदेली दर्शक',
       userEmail: user?.email || '',
+      isSelfView,
+      countedForMonetization: !isSelfView,
       timestamp: nowIso,
       createdAt: nowIso,
       serverTimestamp: serverTimestamp()

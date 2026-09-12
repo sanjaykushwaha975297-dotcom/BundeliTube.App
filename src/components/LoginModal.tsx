@@ -100,59 +100,129 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         }, { merge: true });
       }
 
-      if (channelStatus === 'none') {
+      // Helper to evaluate approval status from channel / submission documents
+      const evaluateDocApproval = (data: any) => {
+        if (!data) return { isApproved: false, isPending: false, isRejected: false, status: 'none' };
+        const statusStr = String(data.status || data.approvalStatus || data.channelStatus || '').toLowerCase();
+        const isRejected = statusStr === 'rejected' || data.isRejected === true;
+        const isApproved = !isRejected && (
+          statusStr === 'approved' ||
+          statusStr === 'verified' ||
+          data.isApproved === true ||
+          data.approved === true ||
+          data.channelStatus === 'approved' ||
+          data.approvalStatus === 'approved' ||
+          data.kycStatus === 'verified'
+        );
+        const isPending = !isRejected && !isApproved && (
+          statusStr === 'pending' ||
+          data.approvalStatus === 'pending' ||
+          data.channelStatus === 'pending' ||
+          data.kycStatus === 'pending'
+        );
+        return { isApproved, isPending, isRejected, status: isApproved ? 'approved' : isRejected ? 'rejected' : isPending ? 'pending' : 'none' };
+      };
+
+      // If user is not yet verified as approved, check channels and submissions collections
+      if (channelStatus !== 'approved') {
         // 1. Check if existing user doc had a channelId
         if (existingUserData?.channelId) {
           const directChanSnap = await getDoc(doc(db, 'channels', existingUserData.channelId)).catch(() => null);
           if (directChanSnap && directChanSnap.exists()) {
-            const cd = directChanSnap.data();
-            channelStatus = (cd.status === 'approved' || cd.approvalStatus === 'approved') ? 'approved' : 'pending';
-            userChannelId = directChanSnap.id;
-            channelHandle = cd.handle || cleanHandle;
-            role = channelStatus === 'approved' ? 'creator' : 'viewer';
+            const res = evaluateDocApproval(directChanSnap.data());
+            if (res.isApproved) {
+              channelStatus = 'approved';
+              userChannelId = directChanSnap.id;
+              channelHandle = directChanSnap.data().handle || cleanHandle;
+              role = 'creator';
+            } else if (channelStatus === 'none' && res.isPending) {
+              channelStatus = 'pending';
+              userChannelId = directChanSnap.id;
+              role = 'creator';
+            }
           } else {
             const directSubSnap = await getDoc(doc(db, 'channel_submissions', existingUserData.channelId)).catch(() => null);
             if (directSubSnap && directSubSnap.exists()) {
-              const sd = directSubSnap.data();
-              channelStatus = (sd.status === 'approved' || sd.approvalStatus === 'approved') ? 'approved' : 'pending';
-              userChannelId = directSubSnap.id;
-              channelHandle = sd.handle || sd.channelHandle || cleanHandle;
-              role = channelStatus === 'approved' ? 'creator' : 'viewer';
+              const res = evaluateDocApproval(directSubSnap.data());
+              if (res.isApproved) {
+                channelStatus = 'approved';
+                userChannelId = directSubSnap.id;
+                channelHandle = directSubSnap.data().handle || directSubSnap.data().channelHandle || cleanHandle;
+                role = 'creator';
+              } else if (channelStatus === 'none' && res.isPending) {
+                channelStatus = 'pending';
+                userChannelId = directSubSnap.id;
+                role = 'creator';
+              }
             }
           }
         }
 
-        // 2. Query channel_submissions by ownerUid
-        if (channelStatus === 'none') {
-          const subQuery = query(collection(db, 'channel_submissions'), where('ownerUid', '==', fbUser.uid));
-          const subSnap = await getDocs(subQuery).catch(() => null);
-          if (subSnap && !subSnap.empty) {
-            const firstSub = subSnap.docs[0];
-            const sd = firstSub.data();
-            channelStatus = (sd.status === 'approved' || sd.approvalStatus === 'approved') ? 'approved' : 'pending';
-            userChannelId = firstSub.id;
-            channelHandle = sd.handle || sd.channelHandle || cleanHandle;
-            role = channelStatus === 'approved' ? 'creator' : 'viewer';
+        // 2. Query channels by ownerUid
+        if (channelStatus !== 'approved') {
+          const chanQuery = query(collection(db, 'channels'), where('ownerUid', '==', fbUser.uid));
+          const chanSnap = await getDocs(chanQuery).catch(() => null);
+          if (chanSnap && !chanSnap.empty) {
+            for (const docItem of chanSnap.docs) {
+              const res = evaluateDocApproval(docItem.data());
+              if (res.isApproved) {
+                channelStatus = 'approved';
+                userChannelId = docItem.id;
+                channelHandle = docItem.data().handle || cleanHandle;
+                role = 'creator';
+                break;
+              } else if (channelStatus === 'none' && res.isPending) {
+                channelStatus = 'pending';
+                userChannelId = docItem.id;
+                role = 'creator';
+              }
+            }
           }
         }
 
-        // 3. Fallback check legacy doc IDs
-        if (channelStatus === 'none') {
+        // 3. Query channel_submissions by ownerUid
+        if (channelStatus !== 'approved') {
+          const subQuery = query(collection(db, 'channel_submissions'), where('ownerUid', '==', fbUser.uid));
+          const subSnap = await getDocs(subQuery).catch(() => null);
+          if (subSnap && !subSnap.empty) {
+            for (const docItem of subSnap.docs) {
+              const res = evaluateDocApproval(docItem.data());
+              if (res.isApproved) {
+                channelStatus = 'approved';
+                userChannelId = docItem.id;
+                channelHandle = docItem.data().handle || docItem.data().channelHandle || cleanHandle;
+                role = 'creator';
+                break;
+              } else if (channelStatus === 'none' && res.isPending) {
+                channelStatus = 'pending';
+                userChannelId = docItem.id;
+                role = 'creator';
+              }
+            }
+          }
+        }
+
+        // 4. Fallback check legacy doc IDs
+        if (channelStatus !== 'approved') {
           const chanDocSnap = await getDoc(doc(db, 'channels', `chan-${fbUser.uid}`)).catch(() => null);
           if (chanDocSnap && chanDocSnap.exists()) {
-            const cd = chanDocSnap.data();
-            channelStatus = (cd.status === 'approved' || cd.approvalStatus === 'approved') ? 'approved' : 'pending';
-            userChannelId = chanDocSnap.id;
-            channelHandle = cd.handle || cleanHandle;
-            role = channelStatus === 'approved' ? 'creator' : 'viewer';
+            const res = evaluateDocApproval(chanDocSnap.data());
+            if (res.isApproved) {
+              channelStatus = 'approved';
+              userChannelId = chanDocSnap.id;
+              channelHandle = chanDocSnap.data().handle || cleanHandle;
+              role = 'creator';
+            }
           } else {
             const chanUidSnap = await getDoc(doc(db, 'channels', fbUser.uid)).catch(() => null);
             if (chanUidSnap && chanUidSnap.exists()) {
-              const cd = chanUidSnap.data();
-              channelStatus = (cd.status === 'approved' || cd.approvalStatus === 'approved') ? 'approved' : 'pending';
-              userChannelId = chanUidSnap.id;
-              channelHandle = cd.handle || cleanHandle;
-              role = channelStatus === 'approved' ? 'creator' : 'viewer';
+              const res = evaluateDocApproval(chanUidSnap.data());
+              if (res.isApproved) {
+                channelStatus = 'approved';
+                userChannelId = chanUidSnap.id;
+                channelHandle = chanUidSnap.data().handle || cleanHandle;
+                role = 'creator';
+              }
             }
           }
         }

@@ -124,7 +124,10 @@ export const INITIAL_REMOTE_CONFIG: RemoteAppConfig = {
   isWithdrawalWindowUnlocked: false,
   withdrawalMinAmount: 5000,
   withdrawalWindowDatesText: '1 से 5 तारीख',
-  withdrawalAdminNotice: 'निकासी केवल 1 से 5 तारीख के बीच एडमिन द्वारा मैन्युअल रूप से अनलॉक होने पर ही उपलब्ध होगी।'
+  withdrawalAdminNotice: 'निकासी केवल 1 से 5 तारीख के बीच एडमिन द्वारा मैन्युअल रूप से अनलॉक होने पर ही उपलब्ध होगी।',
+  // Strict Security: Disable client-side wallet credit; batch distribution is managed by Admin Panel
+  disableAutoWalletCredit: true,
+  monetizationMode: 'admin_batch_distribution'
 };
 
 export const INITIAL_COPYRIGHT_REPORTS: CopyrightReportData[] = [];
