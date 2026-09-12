@@ -29,7 +29,7 @@ function getAvatarPriority(url?: string): number {
  * It checks:
  * 1. Active channel avatar (highest priority for current user)
  * 2. Channel submissions registry
- * 3. Scanned videos: if any video for "SANJAY NEW DEMO" has a custom/newer logo,
+ * 3. Scanned videos: if any video for a channel has a custom/newer logo,
  *    all videos under that channel name inherit that newest logo!
  */
 export function harmonizeVideoAvatars(

@@ -24,7 +24,6 @@ import {
   Image as ImageIcon,
   Headphones,
   User,
-  Bot,
   Circle
 } from 'lucide-react';
 import { UserAccount } from '../types';
@@ -54,7 +53,7 @@ interface ChatMessage {
   id: string;
   senderId: string;
   senderName: string;
-  senderRole: 'user' | 'admin' | 'agent' | 'bot';
+  senderRole: 'user' | 'admin' | 'agent';
   text: string;
   createdAt: string;
 }
@@ -148,13 +147,13 @@ function getBundeliHelpdeskAnswer(userMsg: string, lang: 'hi' | 'en'): string {
 
   if (lower.includes('चैनल') || lower.includes('channel') || lower.includes('पेंडिंग') || lower.includes('pending') || lower.includes('आधार') || lower.includes('aadhar')) {
     return lang === 'hi'
-      ? '🛡️ चैनल वेरिफिकेशन व पेंडिंग स्टेटस:\n• चैनल सुरक्षा हेतु आधार कार्ड का फ्रंट और बैक फोटो तथा 12-अंकीय आधार नंबर अनिवार्य है।\n• एडमिन संजय द्वारा सत्यापन के बाद आपका चैनल स्वीकृत (Approved) हो जाता है।'
-      : '🛡️ Channel Approval: Aadhaar KYC (front/back photos + 12-digit number) required. Reviewed and approved by Admin Sanjay.';
+      ? '🛡️ चैनल वेरिफिकेशन व पेंडिंग स्टेटस:\n• चैनल सुरक्षा हेतु आधार कार्ड का फ्रंट और बैक फोटो तथा 12-अंकीय आधार नंबर अनिवार्य है।\n• एडमिन टीम द्वारा सत्यापन के बाद आपका चैनल स्वीकृत (Approved) हो जाता है।'
+      : '🛡️ Channel Approval: Aadhaar KYC (front/back photos + 12-digit number) required. Reviewed and approved by Admin Team.';
   }
 
   return lang === 'hi'
-    ? 'नमस्ते! आपका संदेश बुन्देलीट्यूब हेल्पडेस्क व व्यवस्थापक (Admin Sanjay) को प्राप्त हो गया है। ✅\n\nसंजय जी या सपोर्ट टीम शीघ्र ही इस चैट पर उत्तर देंगे। आप ऊपर दिए गए त्वरित विकल्पों पर भी क्लिक कर सकते हैं।'
-    : 'Hello! Your message has been received by Admin Sanjay and the BundeliTube team. We will reply shortly.';
+    ? 'नमस्ते! आपका संदेश बुन्देलीट्यूब हेल्पडेस्क व व्यवस्थापक (Admin Support) को प्राप्त हो गया है। ✅\n\nसपोर्ट टीम शीघ्र ही इस चैट पर उत्तर देगी। आप ऊपर दिए गए त्वरित विकल्पों पर भी क्लिक कर सकते हैं।'
+    : 'Hello! Your message has been received by Admin Support and the BundeliTube team. We will reply shortly.';
 }
 
 export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
@@ -204,8 +203,8 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
 
     // Initial greeting if empty
     const initialGreeting: ChatMessage = {
-      id: 'greeting-bot',
-      senderId: 'system_bot',
+      id: 'greeting-admin',
+      senderId: 'admin_desk',
       senderName: 'बुंदेली हेल्पडेस्क 24x7',
       senderRole: 'agent',
       text: language === 'hi'
@@ -491,7 +490,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
               <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-100/50 dark:bg-slate-950/70">
                 {chatMessages.map((msg) => {
                   const isMe = msg.senderRole === 'user';
-                  const isAgent = msg.senderRole === 'agent' || msg.senderRole === 'admin' || msg.senderRole === 'bot';
+                  const isAgent = msg.senderRole === 'agent' || msg.senderRole === 'admin';
                   return (
                     <div
                       key={msg.id}
@@ -500,7 +499,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                       <div className="flex items-center gap-1.5 mb-1 px-1">
                         {isAgent ? (
                           <div className="flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
-                            <Bot className="w-3 h-3" />
+                            <Headphones className="w-3 h-3" />
                             <span>{msg.senderName}</span>
                             <span className="text-[9px] px-1 py-0.2 rounded bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-500/30 text-amber-800 dark:text-amber-300">
                               Support Desk

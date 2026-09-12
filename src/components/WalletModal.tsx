@@ -53,8 +53,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   // Admin detection
   const isAdmin = 
     currentUser.role === 'admin' || 
-    currentUser.email === 'sanjaykushwaha975297@gmail.com' ||
-    currentUser.email?.toLowerCase().includes('sanjay');
+    currentUser.email === 'bundelitubeapp@gmail.com' ||
+    currentUser.email === 'bundelitubeapp.@gmail.com' ||
+    currentUser.email === 'admin@bundelitube.com';
 
   // Withdrawal window rule: strictly 1st to 5th of every month
   const today = new Date();

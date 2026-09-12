@@ -52,16 +52,16 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
 }) => {
   const t = translations[language];
   
-  const [channelName, setChannelName] = useState(() => currentUser?.name ? `${currentUser.name} बुन्देली` : '');
+  const [channelName, setChannelName] = useState('');
   const [channelCategory, setChannelCategory] = useState<string>('music');
-  const [channelLogoPreview, setChannelLogoPreview] = useState<string>(currentUser?.avatar || '');
-  const [mobileNumber, setMobileNumber] = useState(currentUser?.phone?.replace(/[^0-9]/g, '') || '');
+  const [channelLogoPreview, setChannelLogoPreview] = useState<string>('');
+  const [mobileNumber, setMobileNumber] = useState('');
   const [panNumber, setPanNumber] = useState('');
-  const [panCardHolderName, setPanCardHolderName] = useState(() => currentUser?.name || '');
+  const [panCardHolderName, setPanCardHolderName] = useState('');
   const [panPhotoPreview, setPanPhotoPreview] = useState<string>('');
   const [zoomedDocPhoto, setZoomedDocPhoto] = useState<{ url: string; title: string } | null>(null);
   const [bankName, setBankName] = useState('');
-  const [accountHolder, setAccountHolder] = useState(currentUser?.name || '');
+  const [accountHolder, setAccountHolder] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [confirmAccountNumber, setConfirmAccountNumber] = useState('');
   const [ifscCode, setIfscCode] = useState('');
@@ -75,14 +75,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  React.useEffect(() => {
-    if (currentUser) {
-      if (!accountHolder) setAccountHolder(currentUser.name || '');
-      if (!panCardHolderName && currentUser.name) setPanCardHolderName(currentUser.name);
-      if (!channelName) setChannelName(currentUser.name ? `${currentUser.name} बुन्देली` : '');
-      if (!channelLogoPreview && currentUser.avatar) setChannelLogoPreview(currentUser.avatar);
-    }
-  }, [currentUser]);
+  // Fields remain completely clean and empty for the creator to enter fresh details
 
   if (!isOpen) return null;
 
@@ -615,7 +608,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
                     </label>
                     <input
                       type="text"
-                      placeholder={language === 'hi' ? 'उदा. SANJAY KUSHWAHA' : 'e.g. SANJAY KUSHWAHA'}
+                      placeholder={language === 'hi' ? 'उदा. आपका पूरा नाम' : 'e.g. FULL NAME AS PER PAN'}
                       value={panCardHolderName}
                       onChange={(e) => setPanCardHolderName(e.target.value.toUpperCase())}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-400/60 dark:border-amber-500/50 text-slate-900 dark:text-slate-100 text-xs font-bold uppercase focus:outline-none focus:border-amber-500 tracking-wide"

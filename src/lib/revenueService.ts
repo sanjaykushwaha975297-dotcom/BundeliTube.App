@@ -1132,7 +1132,7 @@ export async function distributeAdRevenueToAllCreators(params: {
     channels,
     videos,
     adminNote,
-    adminEmail = 'sanjaykushwaha975297@gmail.com',
+    adminEmail = 'bundelitubeapp@gmail.com',
     customCreatorAdsOverride = {}
   } = params;
 

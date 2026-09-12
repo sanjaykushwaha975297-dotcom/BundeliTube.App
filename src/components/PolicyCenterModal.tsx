@@ -814,7 +814,7 @@ export const PolicyCenterModal: React.FC<PolicyCenterProps> = ({
                       यदि आप कॉपीराइट धारक हैं और पाते हैं कि आपका संगीत या वीडियो बिना अनुमति के अपलोड किया गया है, तो आप वीडियो प्लेयर के 'कॉपीराइट रिपोर्ट' बटन से या सीधे हमारे ईमेल पर कानूनी सूचना भेज सकते हैं:
                     </p>
                     <div className="font-mono text-xs text-amber-500 bg-slate-950 p-2.5 rounded-lg border border-slate-800 inline-block">
-                      Email: sanjaykushwaha975297@gmail.com
+                      Email: bundelitubeapp@gmail.com
                     </div>
                   </div>
                 </div>
@@ -845,15 +845,15 @@ export const PolicyCenterModal: React.FC<PolicyCenterProps> = ({
               <div className={`p-5 sm:p-6 rounded-2xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'} space-y-4`}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
-                    <span className="text-slate-400 text-[11px] block">अधिकारी का नाम (Officer Name):</span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100 text-sm block">संजय कुशवाहा (Sanjay Kushwaha)</span>
-                    <span className="text-amber-500 text-[11px] block">मुख्य शिकायत निवारण व सामग्री अधिकारी</span>
+                    <span className="text-slate-400 text-[11px] block">अधिकारी का पद (Designation):</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100 text-sm block">मुख्य शिकायत निवारण अधिकारी (Grievance Officer)</span>
+                    <span className="text-amber-500 text-[11px] block">बुन्देलीट्यूब लीगल व सपोर्ट विंग</span>
                   </div>
 
                   <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
                     <span className="text-slate-400 text-[11px] block">आधिकारिक संपर्क ईमेल (Official Contact Email):</span>
-                    <a href="mailto:sanjaykushwaha975297@gmail.com" className="font-bold text-blue-400 hover:underline text-sm block font-mono">
-                      sanjaykushwaha975297@gmail.com
+                    <a href="mailto:bundelitubeapp@gmail.com" className="font-bold text-blue-400 hover:underline text-sm block font-mono">
+                      bundelitubeapp@gmail.com
                     </a>
                     <span className="text-slate-500 text-[11px] block">२४ घंटे में पावती • १५ दिनों में समाधान</span>
                   </div>

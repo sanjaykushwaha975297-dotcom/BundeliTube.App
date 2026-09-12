@@ -34,7 +34,8 @@ import {
   Languages,
   LogOut,
   PlusCircle,
-  ShieldCheck
+  ShieldCheck,
+  Mail
 } from 'lucide-react';
 import { MOCK_SUBSCRIBED_CHANNELS, CATEGORIES } from '../data/mockData';
 import { Channel, UserAccount, MainAppView } from '../types';
@@ -56,6 +57,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenCopyright: () => void;
   onOpenPolicies?: (tab?: string) => void;
+  onOpenContactUs?: () => void;
   onOpenPremium: () => void;
   onOpenHelpCenter?: () => void;
   onOpenPendingStatusModal?: () => void;
@@ -79,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings,
   onOpenCopyright,
   onOpenPolicies,
+  onOpenContactUs,
   onOpenPremium,
   onOpenHelpCenter,
   onOpenPendingStatusModal,
@@ -353,6 +356,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
 
         <button
+          onClick={onOpenContactUs}
+          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-normal cursor-pointer ${
+            isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+          } transition ${!isOpen && 'lg:justify-center lg:px-2'}`}
+          title={language === 'hi' ? 'संपर्क करें (Contact Us: bundelitubeapp@gmail.com)' : 'Contact Us (bundelitubeapp@gmail.com)'}
+        >
+          <Mail className="w-4 h-4 shrink-0 text-blue-500" />
+          <span className={`truncate ${!isOpen && 'lg:hidden'}`}>
+            {language === 'hi' ? 'संपर्क करें (Contact Us)' : 'Contact Us'}
+          </span>
+        </button>
+
+        <button
           onClick={onOpenSettings}
           className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-normal cursor-pointer ${
             isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
@@ -448,6 +464,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className="hover:underline cursor-pointer text-left text-teal-400"
             >
               {language === 'hi' ? 'शिकायत अधिकारी (IT Rules)' : 'Grievance Officer'}
+            </button>
+            <button 
+              type="button"
+              onClick={onOpenContactUs} 
+              className="hover:underline cursor-pointer text-left text-blue-400 font-semibold"
+            >
+              {language === 'hi' ? 'संपर्क करें (Contact)' : 'Contact Us'}
             </button>
           </div>
           <p className="text-[10px]">© 2026 BundeliTube LLC</p>

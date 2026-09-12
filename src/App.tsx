@@ -54,6 +54,7 @@ import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { PremiumModal } from './components/PremiumModal';
 import { HelpCenterModal } from './components/HelpCenterModal';
 import { PolicyCenterModal, PolicyTab } from './components/PolicyCenterModal';
+import { ContactUsModal } from './components/ContactUsModal';
 import { ChannelPendingModal } from './components/ChannelPendingModal';
 import { DynamicBannerSlider } from './components/DynamicBannerSlider';
 import { AdMobNativeCard } from './components/AdMobNativeCard';
@@ -435,6 +436,7 @@ export default function App() {
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState<boolean>(false);
   const [isHelpCenterModalOpen, setIsHelpCenterModalOpen] = useState<boolean>(false);
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState<boolean>(false);
+  const [isContactUsModalOpen, setIsContactUsModalOpen] = useState<boolean>(false);
   const [policyActiveTab, setPolicyActiveTab] = useState<PolicyTab>('admob_adsense');
   const [copyrightTargetVideo, setCopyrightTargetVideo] = useState<Video | null>(null);
 
@@ -3065,6 +3067,12 @@ export default function App() {
               }
               handleOpenPolicies(tab);
             }}
+            onOpenContactUs={() => {
+              if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                setSidebarOpen(false);
+              }
+              setIsContactUsModalOpen(true);
+            }}
             language={language}
             onToggleLanguage={handleToggleLanguage}
             theme={theme}
@@ -3722,6 +3730,16 @@ export default function App() {
         initialTab={policyActiveTab}
         language={language}
         theme={theme}
+      />
+
+      {/* Official Contact Us Modal */}
+      <ContactUsModal
+        isOpen={isContactUsModalOpen}
+        onClose={() => setIsContactUsModalOpen(false)}
+        language={language}
+        currentUser={currentUser}
+        theme={theme}
+        onOpenPolicies={handleOpenPolicies}
       />
 
       {/* Floating MiniPlayer when docked */}
