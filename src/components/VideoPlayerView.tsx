@@ -80,6 +80,7 @@ import {
   recordSubscription, 
   saveCommentToFirestore,
   checkUserLikedVideo,
+  isVideoLikedLocally,
   checkUserSubscribedChannel,
   normalizeChannelId,
   getFirestoreSafe,
@@ -124,14 +125,21 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
   const [isAudioOnly, setIsAudioOnly] = useState(false);
   const [likes, setLikes] = useState(video.likes);
   const [hasLiked, setHasLiked] = useState<boolean>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('bt_liked_videos') || '{}');
-      return Boolean(saved[video.id]);
-    } catch (_) {
-      return false;
-    }
+    return isVideoLikedLocally(video.id, currentUser?.id);
   });
   const [hasDisliked, setHasDisliked] = useState(false);
+  const [likeNotice, setLikeNotice] = useState<string>('');
+
+  // Keep hasLiked in sync whenever video.id or currentUser changes
+  useEffect(() => {
+    setHasLiked(isVideoLikedLocally(video.id, currentUser?.id));
+    setHasDisliked(false);
+    if (currentUser?.id) {
+      checkUserLikedVideo(video.id, currentUser.id).then(liked => {
+        setHasLiked(liked);
+      }).catch(() => {});
+    }
+  }, [video.id, currentUser?.id]);
 
   const effectiveChannelId = normalizeChannelId(video.channelId, video.channelName);
 
@@ -1132,26 +1140,38 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
   }, [isDirectTelegramVideo]);
 
   const handleLike = () => {
-    const nextLiked = !hasLiked;
-    if (hasLiked) {
-      setLikes(prev => prev - 1);
-      setHasLiked(false);
-    } else {
-      setLikes(prev => prev + 1);
-      setHasLiked(true);
-      if (hasDisliked) setHasDisliked(false);
+    // 🛡️ Require Login so like is strictly tracked per user account
+    if (!currentUser || !currentUser.isLoggedIn) {
+      if (onOpenLoginModal) {
+        onOpenLoginModal();
+      }
+      return;
     }
-    recordVideoLike(video.id, video.title, nextLiked, currentUser, video.channelId);
+
+    // 🛡️ SINGLE LIKE RULE: Each user or creator can like a video once
+    if (hasLiked) {
+      setLikeNotice(language === 'hi' ? 'आप यह वीडियो पहले ही लाइक कर चुके हैं 👍' : 'You have already liked this video 👍');
+      setTimeout(() => setLikeNotice(''), 3000);
+      return;
+    }
+
+    setLikes(prev => prev + 1);
+    setHasLiked(true);
+    if (hasDisliked) setHasDisliked(false);
+    recordVideoLike(video.id, video.title, true, currentUser, video.channelId);
+    setLikeNotice(language === 'hi' ? 'वीडियो लाइक किया गया! 👍' : 'Video Liked! 👍');
+    setTimeout(() => setLikeNotice(''), 3000);
   };
 
   const handleDislike = () => {
+    if (!currentUser || !currentUser.isLoggedIn) {
+      if (onOpenLoginModal) {
+        onOpenLoginModal();
+      }
+      return;
+    }
     const nextDisliked = !hasDisliked;
     setHasDisliked(nextDisliked);
-    if (hasLiked) {
-      setLikes(prev => prev - 1);
-      setHasLiked(false);
-      recordVideoLike(video.id, video.title, false, currentUser, video.channelId);
-    }
   };
 
   const handleToggleSubscribe = () => {
@@ -1996,11 +2016,16 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                 {/* Horizontal Action Pills Row (YouTube style: Like, Dislike, Share, Remix, Thanks, Download, Save, Report) */}
                 <div className="w-full flex items-center gap-2 overflow-x-auto no-scrollbar py-2 flex-nowrap shrink-0">
                   {/* Like / Dislike Pill */}
-                  <div className="flex items-center rounded-full bg-slate-900 border border-slate-800 overflow-hidden shrink-0">
+                  <div className="relative flex items-center rounded-full bg-slate-900 border border-slate-800 overflow-visible shrink-0">
+                    {likeNotice && (
+                      <div className="absolute -top-9 left-0 px-3 py-1 rounded-lg bg-amber-500 text-slate-950 text-xs font-black shadow-xl z-30 animate-in fade-in slide-in-from-bottom-2 whitespace-nowrap pointer-events-none">
+                        {likeNotice}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={handleLike}
-                      className={`px-3.5 py-2 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      className={`px-3.5 py-2 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer rounded-l-full ${
                         hasLiked ? 'text-amber-400 bg-amber-500/10' : 'text-slate-300 hover:bg-slate-800'
                       }`}
                     >
@@ -2011,7 +2036,7 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                     <button
                       type="button"
                       onClick={handleDislike}
-                      className={`px-3 py-2 text-xs transition-colors cursor-pointer ${
+                      className={`px-3 py-2 text-xs transition-colors cursor-pointer rounded-r-full ${
                         hasDisliked ? 'text-rose-400 bg-rose-500/10' : 'text-slate-400 hover:bg-slate-800'
                       }`}
                     >

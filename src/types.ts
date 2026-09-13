@@ -399,6 +399,23 @@ export interface WithdrawalRequest {
   processedAt?: string;
 }
 
+export interface WithdrawalLockDetails {
+  id?: string;
+  isLocked: boolean;
+  isWithdrawalWindowUnlocked: boolean;
+  status: 'locked' | 'unlocked';
+  windowDaysText: string; // e.g. '1 से 6 तारीख'
+  allowedStartDay: number; // 1
+  allowedEndDay: number; // 6
+  toggledByEmail: string;
+  toggledByName: string;
+  toggledAt: string;
+  reason?: string;
+  notice?: string;
+  source: 'admin_panel_website' | 'admin_app_controls';
+  minWithdrawalAmount: number;
+}
+
 export interface VideoAdConfig {
   enabled: boolean;
   preRollUrl?: string;
@@ -460,13 +477,18 @@ export interface RemoteAppConfig {
   adMobBannerId?: string;
   adMobInterstitialId?: string;
   adMobRewardedId?: string;
-  // Manual Admin Payout & Withdrawal Controls (1st to 5th of month)
+  // Manual Admin Payout & Withdrawal Controls (1st to 6th of month)
   isWithdrawalWindowUnlocked?: boolean;
+  withdrawalPageLocked?: boolean;
   withdrawalMinAmount?: number;
   withdrawalWindowDatesText?: string;
+  withdrawalWindowStartDay?: number;
+  withdrawalWindowEndDay?: number;
   withdrawalAdminNotice?: string;
   withdrawalLastToggledBy?: string;
   withdrawalLastToggledAt?: string;
+  withdrawalLockReason?: string;
+  withdrawalManualMode?: 'manual_unlock' | 'manual_lock' | 'auto_schedule_1_to_6';
   // Automated Ad Revenue Distribution Fields
   lastAdRatePerAd?: number;
   lastAdDistributionTotal?: number;

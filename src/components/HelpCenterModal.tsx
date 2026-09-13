@@ -81,8 +81,8 @@ const FAQ_LIST: FAQItem[] = [
     category: 'monetization',
     questionHi: 'वॉलेट से निकासी (Withdrawal) कब और कैसे होती है?',
     questionEn: 'When and how can I withdraw money from my wallet?',
-    answerHi: 'बुन्देलीट्यूब पर निकासी विंडो हर महीने की 1 तारीख से 5 तारीख तक खुली रहती है। बाकी दिनों (6 से 31) में सिस्टम निकासी लॉक रखता है। न्यूनतम निकासी राशि ₹5,000 है जो सीधे आपके बैंक खाते (NEFT/IMPS) या UPI आईडी पर 24-48 घंटों में ट्रांसफर की जाती है।',
-    answerEn: 'The withdrawal window opens strictly from the 1st to 5th of every month. For the rest of the month (6th to 31st), withdrawals remain locked. The minimum threshold is ₹5,000, transferred via Bank or UPI within 24-48 hours.'
+    answerHi: 'बुन्देलीट्यूब पर निकासी विंडो हर महीने की 1 तारीख से 6 तारीख तक खुली रहती है। बाकी दिनों (7 से 31) में सिस्टम निकासी लॉक रखता है। न्यूनतम निकासी राशि ₹5,000 है जो सीधे आपके बैंक खाते (NEFT/IMPS) या UPI आईडी पर 24-48 घंटों में ट्रांसफर की जाती है।',
+    answerEn: 'The withdrawal window opens strictly from the 1st to 6th of every month. For the rest of the month (7th to 31st), withdrawals remain locked. The minimum threshold is ₹5,000, transferred via Bank or UPI within 24-48 hours.'
   },
   {
     id: 'faq-3',
@@ -123,8 +123,8 @@ function getBundeliHelpdeskAnswer(userMsg: string, lang: 'hi' | 'en'): string {
   
   if (lower.includes('निकासी') || lower.includes('withdrawal') || lower.includes('payout') || lower.includes('wallet') || lower.includes('5000') || lower.includes('बैंक') || lower.includes('upi')) {
     return lang === 'hi'
-      ? '💰 पेआउट व निकासी नियम:\n• क्रिएटर वॉलेट से न्यूनतम निकासी राशि ₹5,000 है।\n• निकासी अनुरोध प्रत्येक माह की 1 से 5 तारीख के बीच स्वीकार किए जाते हैं।\n• राशि आपके सत्यापित बैंक खाते या UPI आईडी में 24-48 घंटे में अंतरित की जाती है।'
-      : '💰 Payout Rules: Minimum withdrawal is ₹5,000. Requests are processed between 1st-5th of each month to your verified Bank/UPI.';
+      ? '💰 पेआउट व निकासी नियम:\n• क्रिएटर वॉलेट से न्यूनतम निकासी राशि ₹5,000 है।\n• निकासी अनुरोध प्रत्येक माह की 1 से 6 तारीख के बीच स्वीकार किए जाते हैं।\n• राशि आपके सत्यापित बैंक खाते या UPI आईडी में 24-48 घंटे में अंतरित की जाती है।'
+      : '💰 Payout Rules: Minimum withdrawal is ₹5,000. Requests are processed between 1st-6th of each month to your verified Bank/UPI.';
   }
   
   if (lower.includes('थंबनेल') || lower.includes('thumbnail') || lower.includes('फोटो') || lower.includes('बदल')) {
@@ -628,7 +628,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     <IndianRupee className="w-4 h-4" />
                   </div>
                   <div>
-                    <strong className="text-xs block font-bold">{language === 'hi' ? '1 से 5 तारीख निकासी' : '1st-5th Payouts'}</strong>
+                    <strong className="text-xs block font-bold">{language === 'hi' ? '1 से 6 तारीख निकासी' : '1st-6th Payouts'}</strong>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400">{language === 'hi' ? '₹5,000 व बैंक नियम' : 'Monthly Window Rules'}</span>
                   </div>
                 </button>
@@ -861,7 +861,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
           <div className="flex items-center gap-4 text-slate-500 dark:text-slate-400 text-[11px]">
             <span className="flex items-center gap-1">
               <Clock className="w-3.5 h-3.5 text-amber-500" />
-              <span>निकासी विंडो: 1 से 5 तारीख</span>
+              <span>निकासी विंडो: 1 से 6 तारीख</span>
             </span>
             <span className="flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />

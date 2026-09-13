@@ -49,12 +49,13 @@ export const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({
 
   if (!isOpen || !video) return null;
 
+  const isShort = Boolean(video.isShort || video.videoType === 'short' || video.category === 'shorts');
   const views = video.views || 145000;
   const impressions = video.impressions || Math.round(views * 8.6);
   const ctr = video.ctr || 11.4;
-  const earnings = video.estimatedEarnings || Math.round((views / 1000) * (video.rpm || 35));
+  const earnings = isShort ? 0 : (video.estimatedEarnings || Math.round((views / 1000) * (video.rpm || 35)));
   const watchTimeHours = video.watchTimeHours || Math.round((views * 4.5) / 60);
-  const rpm = video.rpm || 35;
+  const rpm = isShort ? 0 : (video.rpm || 35);
   const likes = video.likes || Math.round(views * 0.045);
 
   // Dynamic multipliers based on selected time range
@@ -299,7 +300,7 @@ export const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({
                   ₹{currentEarnings.toLocaleString('en-IN')}
                 </span>
                 <span className="block text-[10px] text-emerald-400 font-bold mt-0.5">
-                  RPM: ₹{rpm}.00 / 1K
+                  {isShort ? (language === 'hi' ? 'शॉर्ट्स पर कमाई: ₹0' : 'Shorts RPM: ₹0') : `RPM: ₹${rpm}.00 / 1K`}
                 </span>
               </div>
             </button>

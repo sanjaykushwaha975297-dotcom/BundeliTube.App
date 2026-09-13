@@ -319,37 +319,76 @@ export async function logUserActivity(activity: {
 }
 
 /**
- * Checks whether a user has already liked a video (with local cache fallback)
+ * Returns a user-scoped cache key for liked videos so users/creators never share like state
+ */
+export function getLikedVideosCacheKey(userId?: string | null): string {
+  if (userId && userId !== 'guest' && userId.trim().length > 0) {
+    return `bt_liked_videos_${userId.trim()}`;
+  }
+  return 'bt_liked_videos_guest';
+}
+
+/**
+ * Synchronously checks if a video is liked locally for this user
+ */
+export function isVideoLikedLocally(videoId: string, userId?: string | null): boolean {
+  if (!videoId || !userId || userId === 'guest') return false;
+  const cacheKey = getLikedVideosCacheKey(userId);
+  try {
+    const saved = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+    return saved[videoId] === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Checks whether a user has already liked a video (with user-scoped local cache & Firestore verification)
  */
 export async function checkUserLikedVideo(videoId: string, userId?: string | null): Promise<boolean> {
   if (!videoId) return false;
+  const uid = userId && userId !== 'guest' ? userId.trim() : null;
+  if (!uid) {
+    return false;
+  }
+
+  const cacheKey = getLikedVideosCacheKey(uid);
   try {
-    const saved = JSON.parse(localStorage.getItem('bt_liked_videos') || '{}');
+    const saved = JSON.parse(localStorage.getItem(cacheKey) || '{}');
     if (saved[videoId] === true) return true;
   } catch (_) {}
 
-  const uid = userId || 'guest';
   try {
     const db = getFirestoreSafe();
     const likeDocId = `${uid}_${videoId}`;
     const likeDoc = await getDoc(doc(db, 'video_likes', likeDocId));
     if (likeDoc.exists()) {
       try {
-        const saved = JSON.parse(localStorage.getItem('bt_liked_videos') || '{}');
+        const saved = JSON.parse(localStorage.getItem(cacheKey) || '{}');
         saved[videoId] = true;
-        localStorage.setItem('bt_liked_videos', JSON.stringify(saved));
+        localStorage.setItem(cacheKey, JSON.stringify(saved));
       } catch (_) {}
       return true;
     }
     const legacyLikeDoc = await getDoc(doc(db, 'likes', `like-${uid}-${videoId}`));
     if (legacyLikeDoc.exists()) {
       try {
-        const saved = JSON.parse(localStorage.getItem('bt_liked_videos') || '{}');
+        const saved = JSON.parse(localStorage.getItem(cacheKey) || '{}');
         saved[videoId] = true;
-        localStorage.setItem('bt_liked_videos', JSON.stringify(saved));
+        localStorage.setItem(cacheKey, JSON.stringify(saved));
       } catch (_) {}
       return true;
     }
+
+    // Clean up if local cache had a false positive
+    try {
+      const saved = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+      if (saved[videoId]) {
+        delete saved[videoId];
+        localStorage.setItem(cacheKey, JSON.stringify(saved));
+      }
+    } catch (_) {}
+
     return false;
   } catch (err) {
     console.warn('checkUserLikedVideo note:', err);
@@ -594,15 +633,16 @@ export async function recordVideoLike(
   const likeDocId = `${uid}_${videoId}`;
   const legacyDocId = `like-${uid}-${videoId}`;
 
-  // Instant local storage cache update
+  // Instant local storage cache update using user-scoped key
+  const cacheKey = getLikedVideosCacheKey(uid);
   try {
-    const saved = JSON.parse(localStorage.getItem('bt_liked_videos') || '{}');
+    const saved = JSON.parse(localStorage.getItem(cacheKey) || '{}');
     if (isLiked) {
       saved[videoId] = true;
     } else {
       delete saved[videoId];
     }
-    localStorage.setItem('bt_liked_videos', JSON.stringify(saved));
+    localStorage.setItem(cacheKey, JSON.stringify(saved));
   } catch (_) {}
 
   try {
@@ -1427,4 +1467,96 @@ export async function sendLiveChatMessageToFirestore(msg: {
     return null;
   }
 }
+
+/**
+ * Sync manual lock / unlock of the entire withdrawal page to Firebase.
+ * Ensures the external Admin Panel website and all app users are synchronized.
+ * 1 se 6 tak ke liye (1st to 6th window).
+ */
+export async function syncWithdrawalLockToFirebase(params: {
+  isUnlocked: boolean;
+  lockedBy: string;
+  email: string;
+  reason?: string;
+  windowDatesText?: string;
+  minAmount?: number;
+  startDay?: number;
+  endDay?: number;
+  source?: 'admin_panel_website' | 'admin_app_controls';
+}) {
+  const db = getFirestoreSafe();
+  if (!db) {
+    console.warn('Firestore not available to sync withdrawal lock');
+    return false;
+  }
+
+  const nowIso = new Date().toISOString();
+  const startDay = params.startDay ?? 1;
+  const endDay = params.endDay ?? 6;
+  const windowDatesText = params.windowDatesText || '1 से 6 तारीख';
+  const minAmount = params.minAmount ?? 5000;
+  const isUnlocked = params.isUnlocked;
+  const isLocked = !isUnlocked;
+  const status = isUnlocked ? 'unlocked' : 'locked';
+  const reason = params.reason || (isUnlocked ? 'विंडो खोली गई (1 से 6 तारीख)' : 'विंडो लॉक की गई (एडमिन कंट्रोल)');
+  const source = params.source || 'admin_app_controls';
+
+  const lockPayload = cleanFirestoreData({
+    isWithdrawalWindowUnlocked: isUnlocked,
+    withdrawalPageLocked: isLocked,
+    isLocked: isLocked,
+    status: status,
+    withdrawalWindowDatesText: windowDatesText,
+    withdrawalWindowStartDay: startDay,
+    withdrawalWindowEndDay: endDay,
+    withdrawalMinAmount: minAmount,
+    withdrawalLastToggledBy: params.email || params.lockedBy || 'Admin',
+    withdrawalLastToggledAt: nowIso,
+    withdrawalLockReason: reason,
+    withdrawalManualMode: isUnlocked ? 'manual_unlock' : 'manual_lock',
+    source: source,
+    updatedAt: nowIso,
+    serverTimestamp: serverTimestamp()
+  });
+
+  try {
+    // 1. Update primary app_config (listened by App.tsx)
+    await setDoc(doc(db, 'config', 'app_config'), lockPayload, { merge: true });
+
+    // 2. Update dedicated withdrawal_settings for Admin Panel Website
+    await setDoc(doc(db, 'config', 'withdrawal_settings'), lockPayload, { merge: true });
+
+    // 3. Update app_settings collection for general admin dashboards
+    await setDoc(doc(db, 'app_settings', 'withdrawal_control'), lockPayload, { merge: true });
+
+    // 4. Create an immutable audit log in withdrawal_lock_logs
+    const logId = `lock-log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const auditRecord = cleanFirestoreData({
+      id: logId,
+      ...lockPayload,
+      action: isUnlocked ? 'UNLOCKED' : 'LOCKED',
+      userEmail: params.email,
+      userName: params.lockedBy,
+      timestamp: nowIso
+    });
+    await setDoc(doc(db, 'withdrawal_lock_logs', logId), auditRecord);
+
+    // 5. Activity log
+    await logUserActivity({
+      action: isUnlocked ? 'withdrawal_window_unlocked' : 'withdrawal_window_locked',
+      category: 'admin_withdrawal_control',
+      details: `${isUnlocked ? 'UNLOCKED' : 'LOCKED'} withdrawal page for 1 to 6 window by ${params.email || params.lockedBy}`,
+      userId: params.email,
+      userName: params.lockedBy,
+      userEmail: params.email,
+      metadata: { isUnlocked, windowDatesText, source }
+    });
+
+    return true;
+  } catch (err) {
+    console.error('Failed to sync withdrawal lock details to Firebase:', err);
+    return false;
+  }
+}
+
 

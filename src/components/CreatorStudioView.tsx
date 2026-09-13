@@ -36,7 +36,7 @@ import {
   User,
   Video as VideoIcon
 } from 'lucide-react';
-import { Channel, Video, CreatorWallet, UserAccount, AppUserSettings, VideoPromotionCampaign } from '../types';
+import { Channel, Video, CreatorWallet, UserAccount, AppUserSettings, VideoPromotionCampaign, RemoteAppConfig } from '../types';
 import { Language, translations } from '../locales/i18n';
 
 // Studio Subcomponents
@@ -61,6 +61,7 @@ interface CreatorStudioViewProps {
   wallet: CreatorWallet;
   currentUser: UserAccount;
   promotions?: VideoPromotionCampaign[];
+  remoteConfig?: RemoteAppConfig;
   onOpenUploadModal: () => void;
   onOpenWalletModal: () => void;
   onOpenCreateChannelModal: () => void;
@@ -87,6 +88,7 @@ export const CreatorStudioView: React.FC<CreatorStudioViewProps> = ({
   wallet,
   currentUser,
   promotions = [],
+  remoteConfig,
   onOpenUploadModal,
   onOpenWalletModal,
   onOpenCreateChannelModal,
@@ -725,6 +727,7 @@ export const CreatorStudioView: React.FC<CreatorStudioViewProps> = ({
               channel={channel}
               wallet={wallet}
               language={language}
+              remoteConfig={remoteConfig}
               onOpenWalletModal={onOpenWalletModal}
             />
           )}
@@ -852,8 +855,15 @@ export const CreatorStudioView: React.FC<CreatorStudioViewProps> = ({
               <div className="p-3.5 rounded-2xl bg-slate-950 border border-emerald-500/40 text-center">
                 <span className="text-[11px] text-emerald-400 block font-bold">{language === 'hi' ? 'क्रिएटर कमाई' : 'Earnings'}</span>
                 <strong className="text-lg font-black text-emerald-400 font-mono">
-                  ₹{(inspectedVideo.estimatedEarnings || Math.round(inspectedVideo.views * 0.035)).toLocaleString('en-IN')}
+                  {Boolean(inspectedVideo.isShort || inspectedVideo.videoType === 'short' || inspectedVideo.category === 'shorts')
+                    ? '₹0'
+                    : `₹${(inspectedVideo.estimatedEarnings || Math.round(inspectedVideo.views * 0.035)).toLocaleString('en-IN')}`}
                 </strong>
+                {Boolean(inspectedVideo.isShort || inspectedVideo.videoType === 'short' || inspectedVideo.category === 'shorts') && (
+                  <span className="text-[9px] text-slate-400 block mt-0.5">
+                    {language === 'hi' ? '(शॉर्ट्स पर ₹0 कमाई)' : '(Shorts: ₹0)'}
+                  </span>
+                )}
               </div>
             </div>
 

@@ -120,11 +120,16 @@ export const INITIAL_REMOTE_CONFIG: RemoteAppConfig = {
   videoAdSkipSeconds: 5,
   videoAdCpmRate: 65.00,
   customVideoAds: [],
-  // Manual Admin Payout Control (1st to 5th)
+  // Manual Admin Payout Control (1st to 6th of month)
   isWithdrawalWindowUnlocked: false,
+  withdrawalPageLocked: true,
   withdrawalMinAmount: 5000,
-  withdrawalWindowDatesText: '1 से 5 तारीख',
-  withdrawalAdminNotice: 'निकासी केवल 1 से 5 तारीख के बीच एडमिन द्वारा मैन्युअल रूप से अनलॉक होने पर ही उपलब्ध होगी।',
+  withdrawalWindowDatesText: '1 से 6 तारीख',
+  withdrawalWindowStartDay: 1,
+  withdrawalWindowEndDay: 6,
+  withdrawalAdminNotice: 'निकासी केवल 1 से 6 तारीख के बीच एडमिन द्वारा मैन्युअल रूप से अनलॉक होने पर ही उपलब्ध होगी।',
+  withdrawalManualMode: 'manual_lock',
+  withdrawalLockReason: 'एडमिन पैनल वेबसाइट द्वारा नियंत्रित',
   // Strict Security: Disable client-side wallet credit; batch distribution is managed by Admin Panel
   disableAutoWalletCredit: true,
   monetizationMode: 'admin_batch_distribution'

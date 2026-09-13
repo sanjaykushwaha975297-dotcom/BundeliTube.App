@@ -319,18 +319,26 @@ export default function App() {
 
   // Creator Channel State (Defaults to pure viewer unless real channel created)
   const [channel, setChannel] = useState<Channel>(() => {
-    const saved = safeStorage.getJSON<Channel>('bt_channel', DEFAULT_VIEWER_CHANNEL);
-    if (saved?.id === 'chan-bundeli-maati-01') return DEFAULT_VIEWER_CHANNEL;
-    return saved;
+    const cachedUser = safeStorage.getJSON<UserAccount | null>('bt_user', null);
+    if (cachedUser?.id) {
+      const userChan = safeStorage.getJSON<Channel | null>(`bt_channel_${cachedUser.id}`, null);
+      if (userChan && userChan.ownerUid === cachedUser.id && userChan.id !== 'chan-bundeli-maati-01') {
+        return userChan;
+      }
+    }
+    return DEFAULT_VIEWER_CHANNEL;
   });
 
-  // Creator Wallet State
+  // Creator Wallet State (Defaults strictly to empty wallet with 0 balance)
   const [wallet, setWallet] = useState<CreatorWallet>(() => {
-    const saved = safeStorage.getJSON<CreatorWallet>('bt_wallet', DEFAULT_EMPTY_WALLET);
-    if (saved?.transactions?.some(t => t.id === 'tx-01' || t.id === 'tx-02')) {
-      return DEFAULT_EMPTY_WALLET;
+    const cachedUser = safeStorage.getJSON<UserAccount | null>('bt_user', null);
+    if (cachedUser?.id) {
+      const userWallet = safeStorage.getJSON<CreatorWallet | null>(`bt_wallet_${cachedUser.id}`, null);
+      if (userWallet && !userWallet.transactions?.some(t => t.id === 'tx-01' || t.id === 'tx-02')) {
+        return userWallet;
+      }
     }
-    return saved;
+    return DEFAULT_EMPTY_WALLET;
   });
 
   // Notifications State
@@ -468,12 +476,18 @@ export default function App() {
   }, [videos]);
 
   useEffect(() => {
-    safeStorage.setJSON('bt_channel', channel);
-  }, [channel]);
+    if (currentUser?.id && channel.ownerUid === currentUser.id) {
+      safeStorage.setJSON(`bt_channel_${currentUser.id}`, channel);
+    }
+    safeStorage.removeItem('bt_channel');
+  }, [channel, currentUser?.id]);
 
   useEffect(() => {
-    safeStorage.setJSON('bt_wallet', wallet);
-  }, [wallet]);
+    if (currentUser?.id) {
+      safeStorage.setJSON(`bt_wallet_${currentUser.id}`, wallet);
+    }
+    safeStorage.removeItem('bt_wallet');
+  }, [wallet, currentUser?.id]);
 
   useEffect(() => {
     safeStorage.setJSON('bt_notifs', notifications);
@@ -749,17 +763,19 @@ export default function App() {
                 mobileNumber: userData.mobileNumber || ''
               };
               setChannel(pendingChan);
-              safeStorage.setJSON('bt_channel', pendingChan);
+              safeStorage.setJSON(`bt_channel_${firebaseUser.uid}`, pendingChan);
+              safeStorage.removeItem('bt_channel');
               foundChannel = true;
             }
 
-            // 7. Check local storage channel state before reverting to viewer
+            // 7. Check user-scoped local storage channel state before reverting to viewer
             if (!foundChannel) {
-              const localSavedChan = safeStorage.getItem('bt_channel');
+              const localSavedChan = safeStorage.getItem(`bt_channel_${firebaseUser.uid}`);
               if (localSavedChan) {
                 try {
                   const parsedChan = JSON.parse(localSavedChan);
-                  if (parsedChan && (parsedChan.approvalStatus === 'pending' || parsedChan.approvalStatus === 'approved' || parsedChan.name)) {
+                  // 🛡️ STRICT ISOLATION: Must strictly belong to this user
+                  if (parsedChan && parsedChan.ownerUid === firebaseUser.uid && (parsedChan.approvalStatus === 'pending' || parsedChan.approvalStatus === 'approved')) {
                     setChannel(parsedChan);
                     foundChannel = true;
                   }
@@ -767,7 +783,7 @@ export default function App() {
               }
             }
 
-            // 8. If absolutely no channel exists, initialize viewer channel
+            // 8. If absolutely no channel exists for this user, initialize clean viewer channel
             if (!foundChannel) {
               const cleanViewerChan: Channel = {
                 ...DEFAULT_VIEWER_CHANNEL,
@@ -778,11 +794,14 @@ export default function App() {
                 avatar: firebaseUser.photoURL || DEFAULT_VIEWER_CHANNEL.avatar,
                 subscribers: 0,
                 totalViews: 0,
-                videoCount: 0
+                videoCount: 0,
+                approvalStatus: 'none',
+                kycStatus: 'not_submitted'
               };
               setChannel(cleanViewerChan);
-              safeStorage.setJSON('bt_channel', cleanViewerChan);
+              safeStorage.setJSON(`bt_channel_${firebaseUser.uid}`, cleanViewerChan);
             }
+            safeStorage.removeItem('bt_channel');
 
             // Fetch this user's specific wallet from Firestore
             // 🛡️ ADMIN PANEL AUTHORITY: Firestore wallet document is the sole source of truth
@@ -804,22 +823,21 @@ export default function App() {
                 transactions: Array.isArray(wData.transactions) ? wData.transactions : []
               };
             } else {
-              const localWallet = safeStorage.getJSON<CreatorWallet>('bt_wallet', DEFAULT_EMPTY_WALLET);
-              finalWallet = (localWallet && (localWallet.currentBalance > 0 || localWallet.lifetimeEarnings > 0))
-                ? localWallet
-                : DEFAULT_CREATOR_WALLET;
+              const localWallet = safeStorage.getJSON<CreatorWallet>(`bt_wallet_${firebaseUser.uid}`, DEFAULT_EMPTY_WALLET);
+              finalWallet = localWallet || DEFAULT_EMPTY_WALLET;
             }
 
             setWallet(finalWallet);
-            safeStorage.setJSON('bt_wallet', finalWallet);
+            safeStorage.setJSON(`bt_wallet_${firebaseUser.uid}`, finalWallet);
+            safeStorage.removeItem('bt_wallet');
           } catch (e) {
             console.warn('Firestore user fetch note:', e);
           }
         } else {
-          // Logged out - reset all states cleanly
+          // Logged out - reset all states cleanly to viewer defaults
           setCurrentUser(null);
           setChannel(DEFAULT_VIEWER_CHANNEL);
-          setWallet(DEFAULT_CREATOR_WALLET);
+          setWallet(DEFAULT_EMPTY_WALLET);
           safeStorage.removeItem('bt_user');
           safeStorage.removeItem('bt_channel');
           safeStorage.removeItem('bt_wallet');
@@ -846,8 +864,19 @@ export default function App() {
   }, []);
 
   // Helper to synchronize channel and creator states from Firestore documents
-  const syncChannelFromSubmissionOrDoc = (data: any, docId: string) => {
+  const syncChannelFromSubmissionOrDoc = (data: any, docId: string, expectedOwnerUid?: string) => {
     if (!data) return;
+
+    // 🛡️ STRICT ISOLATION GUARD: Verify ownership against current user
+    const targetUid = expectedOwnerUid || currentUser?.id;
+    if (targetUid) {
+      const dataOwnerUid = data.ownerUid || data.uid || data.userId || data.userUid;
+      if (dataOwnerUid && dataOwnerUid !== targetUid) {
+        console.warn('Blocked channel data leak: channel owner', dataOwnerUid, 'does not match current user', targetUid);
+        return;
+      }
+    }
+
     const statusStr = String(data.status || data.approvalStatus || data.kycStatus || data.channelStatus || '').toLowerCase();
     const isRejected = statusStr === 'rejected' || data.isRejected === true;
 
@@ -918,7 +947,10 @@ export default function App() {
       ) {
         return prev;
       }
-      safeStorage.setJSON('bt_channel', nextChan);
+      if (targetUid) {
+        safeStorage.setJSON(`bt_channel_${targetUid}`, nextChan);
+      }
+      safeStorage.removeItem('bt_channel');
       return nextChan;
     });
 
@@ -1103,22 +1135,18 @@ export default function App() {
 
       // 2. Creator's Own Channel Real-time Sync (Targeted listener strictly for this creator's channel)
       let chanUnsub = () => {};
-      const creatorChannelId = currentUser?.channelId || (channel.id && channel.id !== 'chan-default' ? channel.id : null) || (myUid ? `chan-${myUid}` : null);
-      
-      if (creatorChannelId) {
+      if (myUid) {
+        // STRICT CHANNEL ISOLATION: Only listen to a channel doc that is verified to belong to myUid
+        const creatorChannelId = currentUser?.channelId || (channel?.ownerUid === myUid && channel.id !== 'chan-default' ? channel.id : `chan-${myUid}`);
+        
         chanUnsub = onSnapshot(doc(db, 'channels', creatorChannelId), (docSnap) => {
           if (docSnap.exists()) {
-            syncChannelFromSubmissionOrDoc(docSnap.data(), docSnap.id);
+            const cData = docSnap.data();
+            if (!cData.ownerUid || cData.ownerUid === myUid) {
+              syncChannelFromSubmissionOrDoc(cData, docSnap.id, myUid);
+            }
           }
         }, (err) => console.warn('Firestore channel doc sync note:', err));
-      } else if (myUid) {
-        const myChanQuery = query(collection(db, 'channels'), where('ownerUid', '==', myUid), limit(1));
-        chanUnsub = onSnapshot(myChanQuery, (snapshot) => {
-          if (!snapshot.empty) {
-            const firstDoc = snapshot.docs[0];
-            syncChannelFromSubmissionOrDoc(firstDoc.data(), firstDoc.id);
-          }
-        }, (err) => console.warn('Firestore user channel query note:', err));
       }
 
       // 3. Channel Submissions sync for Admin moderation and Creator's application status
@@ -1146,8 +1174,8 @@ export default function App() {
             setChannelSubmissions(subs);
             safeStorage.setJSON('bt_channel_submissions', subs);
           }
-          if (mySubData) {
-            syncChannelFromSubmissionOrDoc(mySubData, mySubId);
+          if (mySubData && myUid) {
+            syncChannelFromSubmissionOrDoc(mySubData, mySubId, myUid);
           }
         }
       }, (err) => console.warn('Firestore submissions sync note:', err));
@@ -1391,24 +1419,20 @@ export default function App() {
           setChannelSubmissions(subs);
           safeStorage.setJSON('bt_channel_submissions', subs);
         }
-        if (mySubData) {
-          syncChannelFromSubmissionOrDoc(mySubData, mySubId);
+        if (mySubData && myUid) {
+          syncChannelFromSubmissionOrDoc(mySubData, mySubId, myUid);
         }
       }
 
       // 2. Fetch creator's specific channel document directly
-      const creatorChannelId = currentUser?.channelId || (channel.id && channel.id !== 'chan-default' ? channel.id : null) || (myUid ? `chan-${myUid}` : null);
-      if (creatorChannelId) {
+      if (myUid) {
+        const creatorChannelId = currentUser?.channelId || (channel?.ownerUid === myUid && channel.id !== 'chan-default' ? channel.id : `chan-${myUid}`);
         const chanDoc = await getDoc(doc(db, 'channels', creatorChannelId)).catch(() => null);
         if (chanDoc && chanDoc.exists()) {
-          syncChannelFromSubmissionOrDoc(chanDoc.data(), chanDoc.id);
-        }
-      } else if (myUid) {
-        const myChanQuery = query(collection(db, 'channels'), where('ownerUid', '==', myUid), limit(1));
-        const myChanSnap = await getDocs(myChanQuery).catch(() => null);
-        if (myChanSnap && !myChanSnap.empty) {
-          const firstDoc = myChanSnap.docs[0];
-          syncChannelFromSubmissionOrDoc(firstDoc.data(), firstDoc.id);
+          const cData = chanDoc.data();
+          if (!cData.ownerUid || cData.ownerUid === myUid) {
+            syncChannelFromSubmissionOrDoc(cData, chanDoc.id, myUid);
+          }
         }
       }
 
@@ -1658,13 +1682,19 @@ export default function App() {
       if (user.channelId) {
         const chanDoc = await getDoc(doc(db, 'channels', user.channelId)).catch(() => null);
         if (chanDoc && chanDoc.exists()) {
-          syncChannelFromSubmissionOrDoc(chanDoc.data(), chanDoc.id);
-          foundChannel = true;
+          const cData = chanDoc.data();
+          if (!cData.ownerUid || cData.ownerUid === user.id) {
+            syncChannelFromSubmissionOrDoc(cData, chanDoc.id, user.id);
+            foundChannel = true;
+          }
         } else {
           const subDoc = await getDoc(doc(db, 'channel_submissions', user.channelId)).catch(() => null);
           if (subDoc && subDoc.exists()) {
-            syncChannelFromSubmissionOrDoc(subDoc.data(), subDoc.id);
-            foundChannel = true;
+            const sData = subDoc.data();
+            if (!sData.ownerUid || sData.ownerUid === user.id) {
+              syncChannelFromSubmissionOrDoc(sData, subDoc.id, user.id);
+              foundChannel = true;
+            }
           }
         }
       }
@@ -1673,8 +1703,11 @@ export default function App() {
       if (!foundChannel) {
         const chanSnap = await getDoc(doc(db, 'channels', `chan-${user.id}`)).catch(() => null);
         if (chanSnap && chanSnap.exists()) {
-          syncChannelFromSubmissionOrDoc(chanSnap.data(), chanSnap.id);
-          foundChannel = true;
+          const cData = chanSnap.data();
+          if (!cData.ownerUid || cData.ownerUid === user.id) {
+            syncChannelFromSubmissionOrDoc(cData, chanSnap.id, user.id);
+            foundChannel = true;
+          }
         }
       }
 
@@ -1682,8 +1715,11 @@ export default function App() {
       if (!foundChannel) {
         const chanSnap = await getDoc(doc(db, 'channels', user.id)).catch(() => null);
         if (chanSnap && chanSnap.exists()) {
-          syncChannelFromSubmissionOrDoc(chanSnap.data(), chanSnap.id);
-          foundChannel = true;
+          const cData = chanSnap.data();
+          if (!cData.ownerUid || cData.ownerUid === user.id) {
+            syncChannelFromSubmissionOrDoc(cData, chanSnap.id, user.id);
+            foundChannel = true;
+          }
         }
       }
 
@@ -1692,7 +1728,7 @@ export default function App() {
         const chanQuery = query(collection(db, 'channels'), where('ownerUid', '==', user.id), limit(1));
         const chanSnap = await getDocs(chanQuery).catch(() => null);
         if (chanSnap && !chanSnap.empty) {
-          syncChannelFromSubmissionOrDoc(chanSnap.docs[0].data(), chanSnap.docs[0].id);
+          syncChannelFromSubmissionOrDoc(chanSnap.docs[0].data(), chanSnap.docs[0].id, user.id);
           foundChannel = true;
         }
       }
@@ -1702,7 +1738,7 @@ export default function App() {
         const subQuery = query(collection(db, 'channel_submissions'), where('ownerUid', '==', user.id), limit(1));
         const subSnap = await getDocs(subQuery).catch(() => null);
         if (subSnap && !subSnap.empty) {
-          syncChannelFromSubmissionOrDoc(subSnap.docs[0].data(), subSnap.docs[0].id);
+          syncChannelFromSubmissionOrDoc(subSnap.docs[0].data(), subSnap.docs[0].id, user.id);
           foundChannel = true;
         }
       }
@@ -1733,11 +1769,32 @@ export default function App() {
               ownerUid: user.id
             };
             setChannel(restoredChan);
-            safeStorage.setJSON('bt_channel', restoredChan);
+            safeStorage.setJSON(`bt_channel_${user.id}`, restoredChan);
             foundChannel = true;
           }
         }
       }
+
+      // If no channel found, clean viewer channel
+      if (!foundChannel) {
+        const cleanViewerChan: Channel = {
+          ...DEFAULT_VIEWER_CHANNEL,
+          id: `chan-${user.id}`,
+          ownerUid: user.id,
+          name: user.name || 'दर्शक',
+          handle: `@${(user.name || 'user').toLowerCase().replace(/[^a-zA-Z0-9]/g, '')}`,
+          avatar: user.avatar || DEFAULT_VIEWER_CHANNEL.avatar,
+          subscribers: 0,
+          totalViews: 0,
+          videoCount: 0,
+          approvalStatus: 'none',
+          kycStatus: 'not_submitted'
+        };
+        setChannel(cleanViewerChan);
+        safeStorage.setJSON(`bt_channel_${user.id}`, cleanViewerChan);
+      }
+      safeStorage.removeItem('bt_channel');
+      safeStorage.removeItem('bt_wallet');
 
       // 7. Load user's wallet from Firestore
       const walletSnap = await getDoc(doc(db, 'wallets', user.id)).catch(() => null);
@@ -1755,7 +1812,10 @@ export default function App() {
           transactions: Array.isArray(wData.transactions) ? wData.transactions : []
         };
         setWallet(loadedWallet);
-        safeStorage.setJSON('bt_wallet', loadedWallet);
+        safeStorage.setJSON(`bt_wallet_${user.id}`, loadedWallet);
+      } else {
+        const localWallet = safeStorage.getJSON<CreatorWallet>(`bt_wallet_${user.id}`, DEFAULT_EMPTY_WALLET);
+        setWallet(localWallet || DEFAULT_EMPTY_WALLET);
       }
     } catch (e) {
       console.warn('Channel & wallet fetch on login note:', e);
@@ -1778,7 +1838,7 @@ export default function App() {
     }
     setCurrentUser(null);
     setChannel(DEFAULT_VIEWER_CHANNEL);
-    setWallet(DEFAULT_CREATOR_WALLET);
+    setWallet(DEFAULT_EMPTY_WALLET);
     setSelectedVideo(null);
     setMinimizedVideo(null);
     setCurrentView('home');
@@ -2784,19 +2844,24 @@ export default function App() {
 
   // Creator's uploaded videos - strictly matching this channel (including pending submissions)
   const creatorVideos = useMemo(() => {
-    if (!currentUser && (!channel || !channel.ownerUid)) return [];
+    if (!currentUser?.id) return [];
     const list: Video[] = [];
     const seenIds = new Set<string>();
 
-    const myUid = currentUser?.id;
-    const myChannelId = channel?.id;
-    const myOwnerUid = channel?.ownerUid;
+    const myUid = currentUser.id;
+    // Strictly require that the channel belongs to the current user
+    const userChannelId = (channel?.ownerUid === myUid && channel.id && channel.id !== 'chan-default')
+      ? channel.id
+      : null;
 
     videos.forEach(v => {
+      // 🛡️ STRICT ISOLATION RULE:
+      // A video strictly belongs to this creator if:
+      // 1) v.creatorId explicitly matches myUid, OR
+      // 2) userChannelId exists, v.channelId matches userChannelId, and v does not belong to a different creatorId
       const matches = Boolean(
-        (myChannelId && (v.channelId === myChannelId || v.channelId === `chan-${myChannelId}`)) ||
-        (myOwnerUid && (v.channelId === myOwnerUid || v.creatorId === myOwnerUid)) ||
-        (myUid && (v.creatorId === myUid || v.channelId === myUid || v.channelId === `chan-${myUid}`))
+        (v.creatorId && v.creatorId === myUid) ||
+        (userChannelId && (v.channelId === userChannelId || v.channelId === `chan-${myUid}`) && (!v.creatorId || v.creatorId === myUid))
       );
 
       if (matches && !seenIds.has(v.id)) {
@@ -2808,9 +2873,8 @@ export default function App() {
     // Also include any submissions for this channel / creator not yet present in videos array
     videoSubmissions.forEach(sub => {
       const matches = Boolean(
-        (myChannelId && (sub.channelId === myChannelId || sub.channelId === `chan-${myChannelId}`)) ||
-        (myOwnerUid && (sub.creatorUid === myOwnerUid || sub.channelId === myOwnerUid)) ||
-        (myUid && (sub.creatorUid === myUid || sub.channelId === myUid || sub.channelId === `chan-${myUid}`))
+        (sub.creatorUid && sub.creatorUid === myUid) ||
+        (userChannelId && (sub.channelId === userChannelId || sub.channelId === `chan-${myUid}`) && (!sub.creatorUid || sub.creatorUid === myUid))
       );
 
       if (matches && !seenIds.has(sub.id)) {
@@ -3180,13 +3244,14 @@ export default function App() {
           ) : currentView === 'studio' ? (
             /* VIEW 6: Creator Studio */
             currentUser ? (
-              channel.approvalStatus === 'approved' ? (
+              channel.approvalStatus === 'approved' && channel.ownerUid === currentUser.id ? (
                 <CreatorStudioView
                   channel={channel}
                   creatorVideos={creatorVideos}
                   wallet={wallet}
                   currentUser={currentUser}
                   promotions={promotions}
+                  remoteConfig={remoteConfig}
                   onOpenUploadModal={() => setIsUploadModalOpen(true)}
                   onOpenWalletModal={() => setIsWalletModalOpen(true)}
                   onOpenCreateChannelModal={() => setIsCreateChannelModalOpen(true)}
@@ -3212,7 +3277,7 @@ export default function App() {
                   onPromoteVideo={handlePromoteVideo}
                   onSyncFromFirestore={handlePullDataFromFirestore}
                 />
-              ) : channel.approvalStatus === 'pending' ? (
+              ) : channel.approvalStatus === 'pending' && channel.ownerUid === currentUser.id ? (
                 /* Channel Pending Review Screen */
                 <div className="max-w-xl mx-auto py-12 px-6 text-center bg-slate-900 border border-amber-500/30 rounded-3xl space-y-4 shadow-2xl">
                   <div className="w-16 h-16 bg-amber-500/10 text-amber-400 rounded-3xl mx-auto flex items-center justify-center border border-amber-500/30">

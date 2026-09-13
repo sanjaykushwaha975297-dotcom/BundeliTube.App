@@ -28,6 +28,7 @@ import {
   Image as ImageIcon,
   Megaphone,
   UploadCloud,
+  Info,
   Layers,
   Zap,
   DollarSign,
@@ -972,6 +973,16 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
       {/* ======================================================== */}
       {contentSubTab === 'shorts' && (
         <div className="space-y-4">
+          {/* Shorts Non-Monetized Notice Banner */}
+          <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+            <Info className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>
+              {language === 'hi'
+                ? 'शॉर्ट्स नीति: शॉर्ट वीडियो (रील्स) पर क्रिएटर अर्निंग उपलब्ध नहीं है (₹0 कमाई)। केवल मुख्य वीडियो (लॉन्ग वीडियो) पर क्रिएटर अर्निंग लागू होती है।'
+                : 'Shorts Policy: Short videos do not generate creator earnings (₹0). Ad earnings are distributed exclusively on long-form videos.'}
+            </span>
+          </div>
+
           {filteredShorts.length === 0 ? (
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3">
               <div className="w-14 h-14 rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto border border-rose-500/20">
@@ -998,8 +1009,9 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
               {filteredShorts.map((short) => {
                 const viewsCount = short.views || 0;
                 const likesCount = getVideoLikesCount(short);
-                const earnings = short.estimatedEarnings || Math.round(viewsCount * 0.045);
-                const isMonetized = short.isMonetized ?? true;
+                // 🛡️ POLICY ENFORCEMENT: Short vedio ki earning kisi ko na mile (Zero creator earnings)
+                const earnings = 0;
+                const isMonetized = false;
 
                 return (
                   <div key={short.id} className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl overflow-hidden p-3 flex flex-col justify-between group transition duration-200">
@@ -1062,20 +1074,18 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
                       </div>
 
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-400 text-[10px]">कमाई:</span>
-                        <span className="text-emerald-400 font-mono font-bold">₹{earnings}</span>
+                        <span className="text-slate-400 text-[10px]">{language === 'hi' ? 'कमाई (शॉर्ट्स):' : 'Earnings:'}</span>
+                        <span className="text-slate-400 font-mono font-bold">₹0</span>
                       </div>
 
                       <div className="flex items-center justify-end gap-1.5 pt-1">
-                        <button
-                          onClick={() => handleToggleMonetization(short)}
-                          title={isMonetized ? 'Monetization On' : 'Monetization Off'}
-                          className={`p-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition ${
-                            isMonetized ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
-                          }`}
+                        <span
+                          title={language === 'hi' ? 'शॉर्ट्स वीडियो पर कोई अर्निंग नहीं मिलती (₹0)' : 'No creator earnings on shorts'}
+                          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700/50 inline-flex items-center gap-1"
                         >
-                          <IndianRupee className="w-3 h-3" />
-                        </button>
+                          <IndianRupee className="w-2.5 h-2.5" />
+                          <span>0</span>
+                        </span>
 
                         <button
                           onClick={() => handleOpenEditModal(short)}

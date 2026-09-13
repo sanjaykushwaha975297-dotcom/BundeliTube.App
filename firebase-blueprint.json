@@ -187,6 +187,25 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "videoId", "userName", "text", "createdAt"]
+    },
+    "WithdrawalLockRecord": {
+      "title": "WithdrawalLockRecord",
+      "description": "Log of admin manual lock and unlock events for the withdrawal page",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "isWithdrawalWindowUnlocked": { "type": "boolean" },
+        "withdrawalPageLocked": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["locked", "unlocked"] },
+        "withdrawalWindowDatesText": { "type": "string", "maxLength": 50 },
+        "withdrawalWindowStartDay": { "type": "number" },
+        "withdrawalWindowEndDay": { "type": "number" },
+        "withdrawalLastToggledBy": { "type": "string", "maxLength": 120 },
+        "withdrawalLastToggledAt": { "type": "string" },
+        "withdrawalLockReason": { "type": "string", "maxLength": 300 },
+        "source": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "status", "withdrawalLastToggledBy", "withdrawalLastToggledAt"]
     }
   },
   "firestore": {
@@ -233,6 +252,10 @@
     "/comments/{commentId}": {
       "schema": "VideoComment",
       "description": "Live comments with creator moderation"
+    },
+    "/withdrawal_lock_logs/{logId}": {
+      "schema": "WithdrawalLockRecord",
+      "description": "Audit trail of admin lock/unlock operations for the app withdrawal page"
     }
   }
 }

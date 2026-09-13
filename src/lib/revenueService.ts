@@ -118,6 +118,9 @@ export function get24HourMetrics(video: {
  */
 export function getCreator24HourTotals(creatorId: string, videos: any[] = []) {
   const creatorVideos = videos.filter(v => {
+    // 🛡️ POLICY ENFORCEMENT: Short videos do NOT earn creator revenue or ad impression metrics
+    const isShort = Boolean(v.isShort || v.videoType === 'short' || v.category === 'shorts' || (typeof v.youtubeUrl === 'string' && v.youtubeUrl.includes('/shorts/')));
+    if (isShort) return false;
     return v.creatorId === creatorId || v.channelId === creatorId || v.channelId === `chan-${creatorId}`;
   });
 
@@ -341,6 +344,29 @@ export function recordVideoAdImpression(params: {
     return;
   }
 
+  // 🛡️ POLICY ENFORCEMENT: Short vedio ki earning kisi ko na mile
+  // Short video ads do NOT increment monetizable creator ad impressions
+  const isShortAd = adFormat === 'shorts_interstitial' || adFormat === 'shorts_feed';
+  if (isShortAd) {
+    try {
+      const db = getFirestoreSafe();
+      const timestamp = new Date().toISOString();
+      addDoc(collection(db, 'video_ad_impressions'), cleanFirestoreData({
+        videoId,
+        creatorId: creatorId || '',
+        channelName: channelName || '',
+        sponsorBrand,
+        adFormat,
+        isShortAd: true,
+        creatorEarningEligible: false,
+        timestamp: Date.now(),
+        createdAt: timestamp,
+        serverTimestamp: serverTimestamp()
+      })).catch(() => {});
+    } catch (_) {}
+    return;
+  }
+
   addActivityEvent({
     type: 'ad',
     videoId,
@@ -428,7 +454,11 @@ export async function recordShortAdPoolToFirebase(params: {
     createdAt: timestamp,
     createdAtMs: Date.now(),
     serverTimestamp: serverTimestamp(),
-    status: 'pending_admin_review'
+    status: 'recorded',
+    creatorEarningEligible: false,
+    creatorSharePercentage: 0,
+    adminSharePercentage: 100,
+    policyNotice: 'Short video earnings are 0 for creators'
   });
 
   try {
@@ -821,50 +851,18 @@ export async function processShortsFeedAdRevenue(params: {
 
   const fiveWatched = rawWatched.filter(v => !isSelfViewFraud(viewerUserId, { creatorId: v.creatorId }, viewerChannelId));
 
-  // Admin Share: strictly 50%
-  const adminShare = Number((totalAmount * 0.50).toFixed(2));
+  // 🛡️ POLICY ENFORCEMENT: Short vedio ki earning kisi ko na mile
+  // Admin / Platform Share: 100% (No creator earnings on short videos)
+  const adminShare = Number(totalAmount.toFixed(2));
   
-  // Total Creators Pool: strictly 50%
-  const totalCreatorsPool = Number((totalAmount * 0.50).toFixed(2));
-  
-  // Each of the 5 videos watched earns exactly 10% of total ad revenue (1/5th of the 50% pool)
-  const perVideoShare = Number((totalCreatorsPool / 5).toFixed(2));
+  // Total Creators Pool: 0% (₹0.00)
+  const totalCreatorsPool = 0;
+  const perVideoShare = 0;
   const transactionId = `rev-shorts-5v-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const timestamp = new Date().toISOString();
 
-  // Aggregate shares by unique creator ID across the 5 watched videos
-  const creatorMap = new Map<string, {
-    creatorId: string;
-    creatorName: string;
-    channelName: string;
-    videoCount: number;
-    shareAmount: number;
-    sharePercentage: number;
-  }>();
-
-  fiveWatched.forEach(v => {
-    const cid = v.creatorId || 'creator-1';
-    const cname = v.creatorName || `Creator ${cid.slice(-4)}`;
-    const chanName = v.channelName || `Channel ${cid.slice(-4)}`;
-
-    const existing = creatorMap.get(cid);
-    if (existing) {
-      existing.videoCount += 1;
-      existing.shareAmount = Number((existing.shareAmount + perVideoShare).toFixed(2));
-      existing.sharePercentage = existing.videoCount * 10; // 10% per video watched
-    } else {
-      creatorMap.set(cid, {
-        creatorId: cid,
-        creatorName: cname,
-        channelName: chanName,
-        videoCount: 1,
-        shareAmount: perVideoShare,
-        sharePercentage: 10 // 10% per video watched
-      });
-    }
-  });
-
-  const creatorShares: CreatorRevenueShare[] = Array.from(creatorMap.values());
+  // Short videos earn strictly ₹0 for creators
+  const creatorShares: CreatorRevenueShare[] = [];
 
   const record: RevenueTransactionRecord = {
     transactionId,
@@ -873,7 +871,7 @@ export async function processShortsFeedAdRevenue(params: {
     sponsorBrand,
     totalAmount,
     adminShare,
-    adminSharePercentage: 50,
+    adminSharePercentage: 100,
     creatorShares,
     videoId: activeShortId,
     videoTitle: activeShortTitle,
@@ -883,7 +881,7 @@ export async function processShortsFeedAdRevenue(params: {
   try {
     const db = getFirestoreSafe();
 
-    // 1. Credit Admin Wallet (strictly 50%)
+    // 1. Credit Admin Wallet (strictly 100% for shorts ads)
     const adminWalletRef = doc(db, 'platform_wallets', 'admin');
     await setDoc(adminWalletRef, {
       totalShortsAdImpressions: increment(1),
@@ -891,7 +889,7 @@ export async function processShortsFeedAdRevenue(params: {
       serverTimestamp: serverTimestamp()
     }, { merge: true }).catch((err) => console.warn('Admin platform update note:', err));
 
-    // 2. Track ad impressions on each of the 5 watched videos and their channels
+    // 2. Track ad impressions on audit logs only (does not increment creator monetization counts)
     fiveWatched.forEach((wv) => {
       if (wv.videoId) {
         recordVideoAdImpression({
@@ -906,7 +904,7 @@ export async function processShortsFeedAdRevenue(params: {
       }
     });
 
-    // 3. Push the last 5 short videos' Creator IDs into the Firebase 'short_ad_pools' collection
+    // 3. Push the last 5 short videos' Creator IDs into the Firebase 'short_ad_pools' collection for reference
     const last5CreatorIds = fiveWatched.map(v => v.creatorId).filter(Boolean);
     await recordShortAdPoolToFirebase({
       creatorIds: last5CreatorIds,
@@ -916,11 +914,14 @@ export async function processShortsFeedAdRevenue(params: {
       sponsorBrand
     }).catch(err => console.warn('recordShortAdPoolToFirebase note:', err));
 
-    // 4. Log Audit Record in 'revenue_transactions' with watched video details for external admin panel
+    // 4. Log Audit Record in 'revenue_transactions' with non-earning flag
     const txRef = doc(db, 'revenue_transactions', transactionId);
     await setDoc(txRef, cleanFirestoreData({
       ...record,
-      payoutManagedByAdmin: true,
+      payoutManagedByAdmin: false,
+      isShortsRevenue: true,
+      creatorPayoutEligible: false, // 🛡️ Zero creator earning for short videos
+      policyNotice: 'Short video ki earning kisi ko na mile',
       watchedVideosCount: fiveWatched.length,
       watchedVideos: fiveWatched.map(w => ({
         videoId: w.videoId,
@@ -930,7 +931,7 @@ export async function processShortsFeedAdRevenue(params: {
       serverTimestamp: serverTimestamp()
     })).catch((err) => console.warn('Audit log write note:', err));
 
-    console.log(`[RevenueService] Shorts Ad Impression Recorded across 5 watched videos. Payout to be updated via Admin Panel.`);
+    console.log(`[RevenueService] Shorts Ad Impression Recorded. Short videos do not generate creator earnings (₹0). Platform takes 100%.`);
   } catch (err) {
     console.warn('[RevenueService] 5-Video ad recording fallback error:', err);
   }
@@ -1174,6 +1175,9 @@ export function getCreatorEligibleAds(
 ): number {
   const creatorId = sub.ownerUid || sub.id;
   const creatorVideos = videos.filter(v => {
+    // 🛡️ POLICY ENFORCEMENT: Short videos do NOT earn creator ad revenue
+    const isShort = Boolean(v.isShort || v.videoType === 'short' || v.category === 'shorts' || (typeof v.youtubeUrl === 'string' && v.youtubeUrl.includes('/shorts/')));
+    if (isShort) return false;
     return v.creatorId === creatorId || 
            v.creatorUid === creatorId || 
            v.channelId === sub.id || 
@@ -1344,14 +1348,16 @@ export async function distributeAdRevenueToAllCreators(params: {
         try {
           const cachedUser = safeStorage.getJSON<any>('bt_user', null);
           if (cachedUser?.id === creatorId) {
-            safeStorage.setJSON('bt_wallet', {
+            const userWalletPayload = {
               currentBalance: newBal,
               totalWithdrawn: Number(existingWallet.totalWithdrawn || 0),
               lifetimeEarnings: newLife,
               minWithdrawalLimit: 5000,
               pendingClearance: 0,
               transactions: [newTx, ...existingTxs]
-            });
+            };
+            safeStorage.setJSON(`bt_wallet_${creatorId}`, userWalletPayload);
+            safeStorage.setJSON('bt_wallet', userWalletPayload);
           }
         } catch (_) {}
 

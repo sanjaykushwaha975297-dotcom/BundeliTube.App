@@ -852,10 +852,10 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 text-[11px] space-y-1">
                     <span className="font-bold text-amber-600 dark:text-amber-400 block flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      <span>न्यूनतम निकासी ₹5,000 (1 से 5 तारीख)</span>
+                      <span>न्यूनतम निकासी ₹5,000 (1 से 6 तारीख)</span>
                     </span>
                     <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                      निकासी केवल ₹5,000 बैलेंस पर हर महीने की 1 से 5 तारीख को एडमिन द्वारा अनलॉक होने पर ही होगी।
+                      निकासी केवल ₹5,000 बैलेंस पर हर महीने की 1 से 6 तारीख को एडमिन द्वारा अनलॉक होने पर ही होगी।
                     </p>
                   </div>
 
@@ -893,7 +893,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
                   {showPolicyQuickView && (
                     <div className="mt-2.5 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] space-y-2 text-slate-700 dark:text-slate-300 leading-relaxed">
                       <p><strong>1. मुद्रीकरण व भुगतान:</strong> क्रिएटर को विज्ञापनों से प्राप्त शुद्ध आय का 50% प्रदान किया जाएगा। शेष 50% प्लेटफ़ॉर्म सर्वर, वीडियो स्ट्रीमिंग CDN और रखरखाव के लिए उपयोग होता है।</p>
-                      <p><strong>2. निकासी नियम:</strong> न्यूनतम निकासी राशि ₹5,000 है। निकासी विंडो प्रत्येक माह की 1 से 5 तारीख तक एडमिन नियंत्रण में सक्रिय रहती है। 6 तारीख को विंडो बंद हो जाती है।</p>
+                      <p><strong>2. निकासी नियम:</strong> न्यूनतम निकासी राशि ₹5,000 है। निकासी विंडो प्रत्येक माह की 1 से 6 तारीख तक एडमिन नियंत्रण में सक्रिय रहती है। 7 तारीख को विंडो बंद हो जाती है।</p>
                       <p><strong>3. Google AdSense / AdMob अनुपालन:</strong> विज्ञापन कोड में कोई छेड़छाड़, बॉट ट्रैफ़िक, क्लिक रिंग या फ़र्ज़ी व्यूज पकड़े जाने पर Google नियमों के तहत तत्काल प्रभाव से बिना नोटिस चैनल ब्लैकलिस्ट किया जाएगा।</p>
                       <p><strong>4. सुरक्षा व कानूनी अनुपालन:</strong> भारतीय आईटी नियम 2021 और डिजिटल मीडिया आचार संहिता का पालन अनिवार्य है।</p>
                     </div>
@@ -916,8 +916,8 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
                     <div className="space-y-1">
                       <span className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug block">
                         {language === 'hi'
-                          ? 'मैंने बुन्देली ट्यूब की 50-50 कमाई नीति, Google AdSense व AdMob अमान्य क्लिक नियम, ₹5,000 न्यूनतम निकासी (1 से 5 तारीख) और सभी नियम व शर्तें ध्यानपूर्वक पढ़ ली हैं और मैं इनसे पूर्णतः सहमत हूँ। *'
-                          : 'I have read and fully agree to the BundeliTube 50/50 Monetization Policy, AdSense/AdMob Invalid Traffic Rules, ₹5,000 Minimum Payout (1st-5th), and all Terms of Service. *'}
+                          ? 'मैंने बुन्देली ट्यूब की 50-50 कमाई नीति, Google AdSense व AdMob अमान्य क्लिक नियम, ₹5,000 न्यूनतम निकासी (1 से 6 तारीख) और सभी नियम व शर्तें ध्यानपूर्वक पढ़ ली हैं और मैं इनसे पूर्णतः सहमत हूँ। *'
+                          : 'I have read and fully agree to the BundeliTube 50/50 Monetization Policy, AdSense/AdMob Invalid Traffic Rules, ₹5,000 Minimum Payout (1st-6th), and all Terms of Service. *'}
                       </span>
                       <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold block">
                         {language === 'hi'

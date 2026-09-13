@@ -247,7 +247,7 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
         duration: finalDuration,
         uploadDate: new Date().toISOString().split('T')[0],
         isVerified: false,
-        isMonetized: isMonetized,
+        isMonetized: isShortFormat ? false : isMonetized,
         estimatedEarnings: 0,
         tags: tagArray,
         verificationCode: verificationCode,
@@ -299,7 +299,7 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
         duration: finalDuration,
         uploadDate: language === 'hi' ? 'अभी-अभी' : 'Just now',
         isVerified: false,
-        isMonetized: isMonetized,
+        isMonetized: isShortFormat ? false : isMonetized,
         estimatedEarnings: 0,
         tags: tagArray,
         verificationCode: verificationCode,
@@ -802,16 +802,23 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
                       {language === 'hi' ? 'विज्ञापन मुद्रीकरण (Monetize with Ads)' : 'Ad Monetization'}
                     </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {language === 'hi' ? 'यूट्यूब प्लेयर पर इन-स्ट्रीम व बैनर विज्ञापनों से कमाई प्राप्त करें' : 'Earn creator ad revenue on plays'}
-                    </p>
+                    {videoFormat === 'short' ? (
+                      <p className="text-[11px] text-amber-500 font-bold">
+                        {language === 'hi' ? '⚠️ शॉर्ट्स वीडियो पर क्रिएटर अर्निंग उपलब्ध नहीं है (₹0 कमाई)' : '⚠️ Short videos do not generate creator earnings (₹0)'}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {language === 'hi' ? 'यूट्यूब प्लेयर पर इन-स्ट्रीम व बैनर विज्ञापनों से कमाई प्राप्त करें' : 'Earn creator ad revenue on plays'}
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                <label className="relative inline-flex items-center cursor-pointer">
+                <label className={`relative inline-flex items-center ${videoFormat === 'short' ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                   <input
                     type="checkbox"
-                    checked={isMonetized}
+                    checked={videoFormat === 'short' ? false : isMonetized}
+                    disabled={videoFormat === 'short'}
                     onChange={(e) => setIsMonetized(e.target.checked)}
                     className="sr-only peer"
                   />

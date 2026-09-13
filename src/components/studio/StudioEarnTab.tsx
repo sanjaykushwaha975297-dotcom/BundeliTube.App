@@ -17,13 +17,14 @@ import {
   AlertTriangle,
   Info
 } from 'lucide-react';
-import { Channel, CreatorWallet } from '../../types';
+import { Channel, CreatorWallet, RemoteAppConfig } from '../../types';
 import { Language, translations } from '../../locales/i18n';
 
 interface StudioEarnTabProps {
   channel: Channel;
   wallet: CreatorWallet;
   language: Language;
+  remoteConfig?: RemoteAppConfig;
   onOpenWalletModal: () => void;
 }
 
@@ -31,12 +32,17 @@ export const StudioEarnTab: React.FC<StudioEarnTabProps> = ({
   channel,
   wallet,
   language,
+  remoteConfig,
   onOpenWalletModal
 }) => {
   const t = translations[language];
-  const minLimit = wallet.minWithdrawalLimit || 5000;
+  const minLimit = remoteConfig?.withdrawalMinAmount || wallet.minWithdrawalLimit || 5000;
   const progressPercent = Math.min(100, Math.round((wallet.currentBalance / minLimit) * 100));
   const isEligible = wallet.currentBalance >= minLimit;
+
+  // Withdrawal window lock state
+  const isWithdrawalLocked = remoteConfig?.withdrawalPageLocked === true || remoteConfig?.isWithdrawalWindowUnlocked !== true;
+  const windowDatesText = remoteConfig?.withdrawalWindowDatesText || '1 से 6 तारीख';
 
   return (
     <div id="studio-earn-tab" className="space-y-6 animate-in fade-in">
@@ -180,28 +186,50 @@ export const StudioEarnTab: React.FC<StudioEarnTabProps> = ({
 
             <p className="text-[11px] text-slate-400 leading-relaxed">
               {language === 'hi'
-                ? `निकासी विंडो: प्रत्येक माह की 1 से 5 तारीख। न्यूनतम ₹${minLimit.toLocaleString('en-IN')} बैलेंस होने पर आप सीधे UPI या बैंक खाते में बिना किसी शुल्क के निकासी कर सकते हैं।`
-                : `Withdrawal window: 1st to 5th of each month. Direct bank or UPI transfer available upon reaching ₹${minLimit.toLocaleString('en-IN')}.`}
+                ? `निकासी विंडो: प्रत्येक माह की ${windowDatesText}। न्यूनतम ₹${minLimit.toLocaleString('en-IN')} बैलेंस होने पर आप सीधे UPI या बैंक खाते में बिना किसी शुल्क के निकासी कर सकते हैं।`
+                : `Withdrawal window: 1st to 6th of each month (${windowDatesText}). Direct bank or UPI transfer available upon reaching ₹${minLimit.toLocaleString('en-IN')}.`}
             </p>
           </div>
 
-          {/* Monthly Withdrawal Window Policy Alert */}
-          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+          {/* Monthly Withdrawal Window Policy Alert & Live Lock Status */}
+          <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
+            isWithdrawalLocked 
+              ? 'bg-rose-500/10 border-rose-500/30' 
+              : 'bg-emerald-500/10 border-emerald-500/30'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              {isWithdrawalLocked ? (
+                <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30">
+                  <Lock className="w-4 h-4" />
+                </div>
+              ) : (
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                  <Coins className="w-4 h-4" />
+                </div>
+              )}
               <div>
-                <span className="font-bold text-amber-300 block">
-                  {language === 'hi' ? 'मासिक निकासी विंडो: 1 से 5 तारीख' : 'Monthly Withdrawal Window: 1st - 5th'}
+                <span className={`font-bold block ${isWithdrawalLocked ? 'text-rose-300' : 'text-emerald-300'}`}>
+                  {language === 'hi' 
+                    ? `मासिक निकासी विंडो: ${windowDatesText}` 
+                    : `Monthly Withdrawal Window: 1st - 6th (${windowDatesText})`}
                 </span>
                 <span className="text-[11px] text-slate-300">
-                  {language === 'hi'
-                    ? 'सभी पेआउट अनुरोध हर माह 1 से 5 तारीख के बीच लिए व प्रोसेस किए जाते हैं।'
-                    : 'Payout requests are accepted and processed between 1st and 5th of every month.'}
+                  {isWithdrawalLocked
+                    ? (language === 'hi' 
+                        ? 'वर्तमान में निकासी विंडो लॉक है। 1 से 6 तारीख के दौरान एडमिन पैनल वेबसाइट द्वारा अनलॉक की जाएगी।' 
+                        : 'Withdrawal page currently locked by Admin. Window active during 1st-6th when unlocked.')
+                    : (language === 'hi'
+                        ? 'निकासी विंडो खुली है! 1 से 6 तारीख के दौरान आप अपना पेआउट अनुरोध सबमिट कर सकते हैं।'
+                        : 'Withdrawal window is OPEN! You can submit your payout request.')}
                 </span>
               </div>
             </div>
-            <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
-              {language === 'hi' ? '1-5 तारीख चक्र' : '1st - 5th Cycle'}
+            <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 border ${
+              isWithdrawalLocked
+                ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+            }`}>
+              {isWithdrawalLocked ? (language === 'hi' ? '🔒 लॉक (बंद)' : '🔒 LOCKED') : (language === 'hi' ? '🔓 सक्रिय (Active)' : '🔓 ACTIVE')}
             </span>
           </div>
 

@@ -515,8 +515,8 @@ export const PolicyCenterModal: React.FC<PolicyCenterProps> = ({
                   </div>
                   <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                     {docLanguage === 'hi'
-                      ? 'बुन्देली ट्यूब बुंदेलखंड के लोक कलाकारों, गायकों, राई नर्तकों और वीडियो निर्माताओं को सीधे डिजिटल कमाई प्रदान करता है। यह नीति हमारे 50-50 राजस्व विभाजन, ₹5,000 न्यूनतम निकासी, पैन व मोबाइल सत्यापन तथा 1 से 5 तारीख की एडमिन-नियंत्रित पेआउट खिड़की को पारदर्शी रूप से परिभाषित करती है।'
-                      : 'BundeliTube empowers folk artists, singers, and video creators across Bundelkhand with direct digital earnings. This policy formally defines our 50/50 ad revenue split, ₹5,000 minimum payout threshold, PAN/Mobile KYC requirements, and 1st to 5th monthly payout schedules.'}
+                      ? 'बुन्देली ट्यूब बुंदेलखंड के लोक कलाकारों, गायकों, राई नर्तकों और वीडियो निर्माताओं को सीधे डिजिटल कमाई प्रदान करता है। यह नीति हमारे 50-50 राजस्व विभाजन, ₹5,000 न्यूनतम निकासी, पैन व मोबाइल सत्यापन तथा 1 से 6 तारीख की एडमिन-नियंत्रित पेआउट खिड़की को पारदर्शी रूप से परिभाषित करती है।'
+                      : 'BundeliTube empowers folk artists, singers, and video creators across Bundelkhand with direct digital earnings. This policy formally defines our 50/50 ad revenue split, ₹5,000 minimum payout threshold, PAN/Mobile KYC requirements, and 1st to 6th monthly payout schedules.'}
                   </p>
                 </div>
               </div>
@@ -633,11 +633,11 @@ export const PolicyCenterModal: React.FC<PolicyCenterProps> = ({
 
                     <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                       <span className="text-slate-500 text-[11px] uppercase tracking-wider block">मासिक पेआउट विंडो (MONTHLY PAYOUT DATES)</span>
-                      <span className="text-xl font-black text-amber-500 font-mono mt-0.5 block">1 से 5 तारीख</span>
+                      <span className="text-xl font-black text-amber-500 font-mono mt-0.5 block">1 से 6 तारीख</span>
                       <p className="text-slate-500 text-[11px] mt-1">
                         {docLanguage === 'hi'
-                          ? 'हर महीने की 1 से 5 तारीख के बीच पेआउट विंडो उपलब्ध होती है और सत्यापित क्रिएटर पेआउट सीधे बैंक ट्रांसफर (NEFT/IMPS) या UPI द्वारा भेजे जाते हैं।'
-                          : 'Payout requests are available strictly between 1st and 5th of every month, directly deposited to verified Bank or UPI.'}
+                          ? 'हर महीने की 1 से 6 तारीख के बीच पेआउट विंडो उपलब्ध होती है और सत्यापित क्रिएटर पेआउट सीधे बैंक ट्रांसफर (NEFT/IMPS) या UPI द्वारा भेजे जाते हैं।'
+                          : 'Payout requests are available strictly between 1st and 6th of every month, directly deposited to verified Bank or UPI.'}
                       </p>
                     </div>
                   </div>
@@ -649,8 +649,8 @@ export const PolicyCenterModal: React.FC<PolicyCenterProps> = ({
                     </div>
                     <p className="text-[11px] leading-relaxed">
                       {docLanguage === 'hi'
-                        ? 'निकासी विंडो पूर्णतः एडमिन के नियंत्रण में है। एडमिन प्रत्येक माह की 1 तारीख को Firebase / एडमिन सिस्टम से इसे मैन्युअल रूप से अनलॉक (Open) करता है, तथा 6 तारीख को इसे लॉक (Band) कर देता है। विंडो 1 से 5 तारीख के मध्य ही केवल एडमिन की अनुमति से सक्रिय होगी।'
-                        : 'The withdrawal window is under manual admin control via Firebase. The admin manually unlocks it on the 1st of the month and locks it on the 6th. Payout requests are valid only between 1st and 5th when unlocked by Admin.'}
+                        ? 'निकासी विंडो पूर्णतः एडमिन के नियंत्रण में है। एडमिन प्रत्येक माह की 1 तारीख को Firebase / एडमिन सिस्टम से इसे मैन्युअल रूप से अनलॉक (Open) करता है, तथा 7 तारीख को इसे लॉक (Band) कर देता है। विंडो 1 से 6 तारीख के मध्य ही केवल एडमिन की अनुमति से सक्रिय होगी।'
+                        : 'The withdrawal window is under manual admin control via Firebase. The admin manually unlocks it on the 1st of the month and locks it on the 7th. Payout requests are valid only between 1st and 6th when unlocked by Admin.'}
                     </p>
                   </div>
                 </div>

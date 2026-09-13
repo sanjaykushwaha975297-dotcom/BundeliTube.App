@@ -283,7 +283,7 @@ export const StudioDashboardTab: React.FC<StudioDashboardTabProps> = ({
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800">
                   <span className="text-emerald-400 font-medium">{language === 'hi' ? 'अनुमानित विज्ञापन कमाई' : 'Estimated Ad Revenue'}:</span>
                   <strong className="text-emerald-400 font-mono font-bold">
-                    ₹{(latestVideo.estimatedEarnings || 0).toLocaleString('en-IN')}
+                    ₹{(Boolean(latestVideo.isShort || latestVideo.videoType === 'short' || latestVideo.category === 'shorts') ? 0 : (latestVideo.estimatedEarnings || 0)).toLocaleString('en-IN')}
                   </strong>
                 </div>
               </div>

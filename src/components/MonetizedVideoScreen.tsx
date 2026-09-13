@@ -935,9 +935,9 @@ export const MonetizedVideoScreen: React.FC<MonetizedVideoScreenProps> = ({
                     <span>{language === 'hi' ? 'स्वचालित 50:50 / 100% स्प्लिट' : 'Atomic Firestore Wallet Split'}</span>
                   </div>
                   <ul className="text-[11px] text-slate-400 space-y-1 pl-3 list-disc">
-                    <li>50% Admin + 50% Video Creator</li>
-                    <li>Shorts Feed: 50% Admin + 50% split across last 5 creators</li>
-                    <li>Banner Ads: 100% Admin Wallet</li>
+                    <li>{language === 'hi' ? 'लॉन्ग वीडियो विज्ञापन: 50% एडमिन + 50% वीडियो क्रिएटर' : 'Long Video Ads: 50% Admin + 50% Video Creator'}</li>
+                    <li>{language === 'hi' ? 'शॉर्ट्स फीड: 100% एडमिन / प्लेटफॉर्म (शॉर्ट्स वीडियो पर कोई क्रिएटर कमाई नहीं)' : 'Shorts Feed: 100% Platform / Admin (No creator earnings on shorts)'}</li>
+                    <li>{language === 'hi' ? 'बैनर विज्ञापन: 100% एडमिन वॉलेट' : 'Banner Ads: 100% Admin Wallet'}</li>
                   </ul>
                 </div>
               </div>

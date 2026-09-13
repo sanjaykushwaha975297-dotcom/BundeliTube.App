@@ -418,7 +418,7 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
       ? [...recent5WatchedRef.current]
       : shortsWatchedVideosTracker.getLast5WatchedVideos();
 
-    // Run 50% Admin / 50% distributed to creators of the 5 watched videos (10% each)
+    // Short videos do not generate creator earnings (0% Creator Share, 100% Platform)
     processShortsFeedAdRevenue({
       totalAmount: 0.40,
       sponsorBrand: 'AdMob Partner Sponsored Reel',
@@ -437,7 +437,7 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
       setTimeout(() => {
         onAdImpressionCredited({
           impressionValue: 0.40,
-          creatorShare: 0.20,
+          creatorShare: 0, // 🛡️ Zero creator earning for short videos
           videoId: currentShort.id
         });
       }, 0);
@@ -565,40 +565,51 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
 
   const handleLike = () => {
     if (!currentShort) return;
-    const nextLiked = !currentShort.isLiked;
+    if (!currentUser || !currentUser.isLoggedIn) {
+      if (onOpenLoginModal) {
+        onOpenLoginModal();
+      }
+      return;
+    }
+
+    // 🛡️ 1 LIKE PER USER / CREATOR: If already liked, keep it liked
+    if (currentShort.isLiked) {
+      return;
+    }
+
     setShortsList(prev => prev.map((s, idx) => {
       if (idx === currentIndex) {
         return {
           ...s,
-          isLiked: nextLiked,
-          likes: nextLiked ? s.likes + 1 : Math.max(0, s.likes - 1),
+          isLiked: true,
+          likes: s.likes + 1,
           isDisliked: false
         };
       }
       return s;
     }));
     const channelKey = (currentShort as any).channelId || currentShort.channelName || 'chan-default';
-    recordVideoLike(currentShort.id, currentShort.title, nextLiked, currentUser, channelKey);
+    recordVideoLike(currentShort.id, currentShort.title, true, currentUser, channelKey);
   };
 
   const handleDislike = () => {
     if (!currentShort) return;
+    if (!currentUser || !currentUser.isLoggedIn) {
+      if (onOpenLoginModal) {
+        onOpenLoginModal();
+      }
+      return;
+    }
     const nextDisliked = !currentShort.isDisliked;
     setShortsList(prev => prev.map((s, idx) => {
       if (idx === currentIndex) {
         return {
           ...s,
-          isDisliked: nextDisliked,
-          isLiked: false,
-          likes: s.isLiked ? Math.max(0, s.likes - 1) : s.likes
+          isDisliked: nextDisliked
         };
       }
       return s;
     }));
-    if (currentShort.isLiked) {
-      const channelKey = (currentShort as any).channelId || currentShort.channelName || 'chan-default';
-      recordVideoLike(currentShort.id, currentShort.title, false, currentUser, channelKey);
-    }
   };
 
   const handleToggleSubscribe = () => {
