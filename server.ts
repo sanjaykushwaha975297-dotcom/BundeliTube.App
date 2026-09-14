@@ -295,6 +295,15 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    // Explicit route for sitemap.xml to prevent SPA wildcard catch-all redirection
+    app.get("/sitemap.xml", (_req: Request, res: Response) => {
+      const sitemapPath = path.join(process.cwd(), "public", "sitemap.xml");
+      if (fs.existsSync(sitemapPath)) {
+        res.setHeader("Content-Type", "application/xml; charset=utf-8");
+        return res.sendFile(sitemapPath);
+      }
+      res.status(404).send("Sitemap not found");
+    });
     app.use(express.static(distPath));
     app.get("*", (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, "index.html"));
