@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { CreatorWallet, Channel, UserAccount, RemoteAppConfig } from '../types';
 import { Language, translations } from '../locales/i18n';
-import { getFirestoreSafe, addDoc, collection, doc, setDoc, serverTimestamp, cleanFirestoreData } from '../lib/firebase';
+import { getFirestoreSafe, addDoc, collection, doc, setDoc, serverTimestamp, cleanFirestoreData, syncWithdrawalLockToFirebase } from '../lib/firebase';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -57,20 +57,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     currentUser.email === 'bundelitubeapp.@gmail.com' ||
     currentUser.email === 'admin@bundelitube.com';
 
-  // Withdrawal window rule: strictly 1st to 5th of every month
-  const today = new Date();
-  const currentDay = today.getDate();
-  const isDateInSchedule = currentDay >= 1 && currentDay <= 5;
-
-  // Firebase Remote Config: manual admin unlock state
-  const isUnlockedByAdmin = remoteConfig?.isWithdrawalWindowUnlocked === true;
-
-  // Operational window: active ONLY if Admin unlocked it AND today is within 1st - 5th
-  const isWindowActive = isUnlockedByAdmin && isDateInSchedule;
+  // ✅ एडमिन पैनल के रिमोट स्विच का सीधा पालन करें (रिमोट स्विच ही अंतिम निर्णय लेता है, स्थानीय तारीख से लॉक नहीं होगा):
+  // User requirement:
+  // bool isUnlocked = config['isWithdrawalWindowUnlocked'] == true || 
+  //                   config['withdrawalPageLocked'] == false;
+  const isUnlocked = remoteConfig?.isWithdrawalWindowUnlocked === true || remoteConfig?.withdrawalPageLocked === false;
+  const isUnlockedByAdmin = isUnlocked;
+  const isWindowActive = isUnlocked;
 
   const minLimit = remoteConfig?.withdrawalMinAmount || wallet.minWithdrawalLimit || 5000;
   const hasEnoughBalance = wallet.currentBalance >= minLimit;
-  const isEligibleForWithdrawal = hasEnoughBalance && isWindowActive;
+  const isEligibleForWithdrawal = hasEnoughBalance && isUnlocked;
 
   const [withdrawAmount, setWithdrawAmount] = useState<string>(String(minLimit));
   const [payoutMethod, setPayoutMethod] = useState<'UPI' | 'Bank Transfer'>('Bank Transfer');
@@ -88,24 +85,35 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const handleToggleAdminLock = async (forceUnlock?: boolean) => {
     setIsTogglingLock(true);
     setAdminStatusMsg('');
-    const nextState = forceUnlock !== undefined ? forceUnlock : !isUnlockedByAdmin;
+    const nextState = forceUnlock !== undefined ? forceUnlock : !isUnlocked;
+    const isLocked = !nextState;
     try {
+      const lockPayload: Partial<RemoteAppConfig> = {
+        isWithdrawalWindowUnlocked: nextState,
+        withdrawalPageLocked: isLocked,
+        withdrawalWindowStartDay: 1,
+        withdrawalWindowEndDay: 6,
+        withdrawalWindowDatesText: remoteConfig?.withdrawalWindowDatesText || '1 से 6 तारीख',
+        withdrawalLastToggledBy: currentUser.email || currentUser.name || 'Admin',
+        withdrawalLastToggledAt: new Date().toISOString(),
+        withdrawalLockReason: nextState ? 'एडमिन स्विच द्वारा अनलॉक (1 से 6 विंडो)' : 'एडमिन स्विच द्वारा लॉक',
+        withdrawalManualMode: nextState ? 'manual_unlock' : 'manual_lock'
+      };
+
       if (onUpdateRemoteConfig) {
-        await onUpdateRemoteConfig({
-          isWithdrawalWindowUnlocked: nextState,
-          withdrawalLastToggledBy: currentUser.email || currentUser.name || 'Admin',
-          withdrawalLastToggledAt: new Date().toISOString()
-        });
-      } else {
-        const db = getFirestoreSafe();
-        if (db) {
-          await setDoc(doc(db, 'config', 'app_config'), {
-            isWithdrawalWindowUnlocked: nextState,
-            withdrawalLastToggledBy: currentUser.email || currentUser.name || 'Admin',
-            withdrawalLastToggledAt: new Date().toISOString()
-          }, { merge: true });
-        }
+        await onUpdateRemoteConfig(lockPayload);
       }
+
+      // Also sync to all Firebase collections and audit logs
+      await syncWithdrawalLockToFirebase({
+        isUnlocked: nextState,
+        lockedBy: currentUser.name || 'Admin',
+        email: currentUser.email || 'Admin',
+        reason: nextState ? 'एडमिन स्विच द्वारा अनलॉक (1 से 6 विंडो)' : 'एडमिन स्विच द्वारा लॉक',
+        windowDatesText: remoteConfig?.withdrawalWindowDatesText || '1 से 6 तारीख',
+        minAmount: minLimit
+      });
+
       setAdminStatusMsg(
         nextState 
           ? (language === 'hi' ? '✓ निकासी विंडो सफलतापूर्वक अनलॉक (खुल गई)!' : '✓ Withdrawal window unlocked successfully!')
@@ -123,17 +131,11 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     e.preventDefault();
     setErrorMsg('');
 
-    if (!isUnlockedByAdmin) {
+    // ✅ एडमिन पैनल के रिमोट स्विच का पालन करें:
+    if (!isUnlocked) {
       setErrorMsg(language === 'hi'
-        ? 'निकासी विंडो व्यवस्थापक द्वारा लॉक है। व्यवस्थापक द्वारा अनलॉक किए जाने पर ही निकासी संभव है।'
-        : 'Withdrawal window is currently locked by Admin. It opens when unlocked by the admin.');
-      return;
-    }
-
-    if (!isDateInSchedule) {
-      setErrorMsg(language === 'hi' 
-        ? 'निकासी विंडो बंद है। निकासी अनुरोध केवल प्रत्येक माह की 1 से 5 तारीख के बीच ही किए जा सकते हैं।' 
-        : 'Withdrawal window is closed. Requests are accepted only between 1st and 5th of each month.');
+        ? 'निकासी विंडो व्यवस्थापक द्वारा लॉक है। एडमिन पैनल वेबसाइट द्वारा अनलॉक किए जाने पर ही निकासी संभव है।'
+        : 'Withdrawal window is currently locked by Admin. It opens when unlocked by the Admin Panel.');
       return;
     }
 
@@ -278,8 +280,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
                   {language === 'hi'
-                    ? '💡 एडमिन निर्देश: हर महीने की 1 तारीख को यहाँ से "विंडो अनलॉक करें" (या Firebase Console में जाकर True करें)। 6 तारीख को यहाँ से "विंडो लॉक करें" (False) कर दें। क्रिएटर्स केवल 1 से 5 तारीख के मध्य ही निकासी कर सकते हैं।'
-                    : '💡 Admin Notice: Unlock the window on the 1st of each month and lock it back on the 6th. Creators can submit withdrawals strictly between 1st and 5th.'}
+                    ? '💡 एडमिन निर्देश: निकासी विंडो सीधे एडमिन पैनल के रिमोट स्विच (isWithdrawalWindowUnlocked == true || withdrawalPageLocked == false) द्वारा नियंत्रित होती है। 1 से 6 तारीख चक्र के लिए आप यहाँ से या अपनी एडमिन वेबसाइट से कभी भी इसे लॉक या अनलॉक कर सकते हैं।'
+                    : '💡 Admin Notice: The withdrawal window follows the admin remote switch. You can unlock or lock it anytime for the 1st to 6th payout cycle.'}
                 </p>
 
                 {adminStatusMsg && (
@@ -292,10 +294,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <div className="flex flex-wrap items-center gap-2.5 pt-1">
                   <button
                     type="button"
-                    onClick={() => handleToggleAdminLock(!isUnlockedByAdmin)}
+                    onClick={() => handleToggleAdminLock(!isUnlocked)}
                     disabled={isTogglingLock}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 ${
-                      isUnlockedByAdmin
+                      isUnlocked
                         ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20'
                         : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
                     }`}
@@ -305,22 +307,22 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                         <span>अपडेट हो रहा है...</span>
                       </>
-                    ) : isUnlockedByAdmin ? (
+                    ) : isUnlocked ? (
                       <>
                         <Lock className="w-3.5 h-3.5" />
-                        <span>🔒 6 तारीख: विंडो तुरंत लॉक करें (Lock Payouts)</span>
+                        <span>🔒 विंडो तुरंत लॉक करें (Lock Payouts)</span>
                       </>
                     ) : (
                       <>
                         <Unlock className="w-3.5 h-3.5" />
-                        <span>🔓 1 तारीख: विंडो तुरंत अनलॉक करें (Open Payouts)</span>
+                        <span>🔓 विंडो तुरंत अनलॉक करें (Open Payouts)</span>
                       </>
                     )}
                   </button>
 
                   <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {isUnlockedByAdmin
-                      ? 'वर्तमान स्थिति: क्रिएटर्स के लिए विंडो खुली है (1-5 तारीख अनुपालन)'
+                    {isUnlocked
+                      ? 'वर्तमान स्थिति: क्रिएटर्स के लिए विंडो खुली है (1 से 6 तारीख चक्र)'
                       : 'वर्तमान स्थिति: क्रिएटर्स के लिए निकासी फॉर्म पूरी तरह लॉक है'}
                   </span>
                 </div>
@@ -387,7 +389,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span>{language === 'hi' ? 'निकासी विंडो: प्रत्येक माह 1 से 5 तारीख तक, एडमिन द्वारा मैन्युअल नियंत्रण में।' : 'Payout Window: 1st to 5th of every month, manually controlled by Admin.'}</span>
+                  <span>{language === 'hi' ? 'निकासी विंडो: प्रत्येक माह 1 से 6 तारीख तक, एडमिन द्वारा रिमोट स्विच नियंत्रण में।' : 'Payout Window: 1st to 6th of every month, controlled by Admin Remote Switch.'}</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <ShieldCheck className="w-3.5 h-3.5 text-purple-500 shrink-0" />
@@ -408,43 +410,39 @@ export const WalletModal: React.FC<WalletModalProps> = ({
             </div>
 
             {/* Withdrawal Window Status Banner */}
-            <div className="mt-4 p-4 rounded-2xl bg-amber-50/60 dark:bg-slate-900 border border-amber-200 dark:border-amber-500/30 space-y-2">
+            <div className={`mt-4 p-4 rounded-2xl border space-y-2 ${
+              isUnlocked 
+                ? 'bg-emerald-50/60 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30' 
+                : 'bg-rose-50/60 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30'
+            }`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                  <span className="font-bold text-xs text-amber-800 dark:text-amber-300">
-                    {language === 'hi' ? 'मासिक निकासी विंडो (1 से 5 तारीख • एडमिन नियंत्रण)' : 'Monthly Payout Window (1st - 5th • Admin Controlled)'}
+                  <Clock className={`w-4 h-4 shrink-0 ${isUnlocked ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`} />
+                  <span className={`font-bold text-xs ${isUnlocked ? 'text-emerald-800 dark:text-emerald-300' : 'text-rose-800 dark:text-rose-300'}`}>
+                    {language === 'hi' ? 'मासिक निकासी विंडो (1 से 6 तारीख • एडमिन रिमोट स्विच)' : 'Monthly Payout Window (1st - 6th • Admin Remote Switch)'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
-                    isWindowActive 
+                    isUnlocked 
                       ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30' 
-                      : !isUnlockedByAdmin
-                      ? 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-500/30'
-                      : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/30'
+                      : 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-500/30'
                   }`}>
-                    {isWindowActive 
+                    {isUnlocked 
                       ? (language === 'hi' ? '🔓 विंडो खुली है (सक्रिय)' : 'Window Open (Active)')
-                      : !isUnlockedByAdmin
-                      ? (language === 'hi' ? '🔒 एडमिन द्वारा लॉक (बंद)' : 'Admin Locked')
-                      : (language === 'hi' ? '📅 1 से 5 तारीख को खुलेगी' : 'Opens 1st-5th')}
+                      : (language === 'hi' ? '🔒 एडमिन द्वारा लॉक (बंद)' : 'Admin Locked')}
                   </span>
                 </div>
               </div>
               <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                {isWindowActive ? (
+                {isUnlocked ? (
                   language === 'hi'
-                    ? '✓ निकासी विंडो सक्रिय है! व्यवस्थापक द्वारा यह विंडो अनलॉक है और वर्तमान तारीख 1 से 5 के मध्य है। यदि आपका बैलेंस ₹5,000 या अधिक है, तो आप निकासी सबमिट कर सकते हैं।'
-                    : '✓ Withdrawal window is active! Unlocked by admin and date is within 1st-5th. You can request payouts if balance is ₹5,000 or above.'
-                ) : !isUnlockedByAdmin ? (
-                  language === 'hi'
-                    ? '⚠️ निकासी विंडो वर्तमान में व्यवस्थापक द्वारा लॉक (बंद) है। 1 तारीख को व्यवस्थापक द्वारा मैन्युअल रूप से अनलॉक किए जाने पर ही निकासी स्वीकार होगी।'
-                    : '⚠️ Withdrawal window is currently locked by the admin. It opens when unlocked by the admin on the 1st of the month.'
+                    ? '✓ निकासी विंडो सक्रिय है! एडमिन पैनल वेबसाइट द्वारा यह विंडो अनलॉक है। यदि आपका बैलेंस ₹5,000 या अधिक है, तो आप निकासी सबमिट कर सकते हैं।'
+                    : '✓ Withdrawal window is active! Unlocked by admin panel. You can request payouts if balance is ₹5,000 or above.'
                 ) : (
                   language === 'hi'
-                    ? '⚠️ निकासी केवल प्रत्येक माह की 1 से 5 तारीख के बीच ही मान्य है। वर्तमान में तारीख 1-5 के बाहर है।'
-                    : '⚠️ Payout requests are valid strictly between the 1st and 5th of each month.'
+                    ? '⚠️ निकासी विंडो वर्तमान में व्यवस्थापक द्वारा लॉक (बंद) है। 1 से 6 तारीख के चक्र में एडमिन द्वारा अनलॉक होने पर ही निकासी स्वीकार होगी।'
+                    : '⚠️ Withdrawal window is currently locked by the admin. It opens when unlocked by the admin.'
                 )}
               </p>
             </div>
@@ -458,25 +456,19 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 }`}>
                   {!hasEnoughBalance
                     ? (language === 'hi' ? `न्यूनतम शेष शेष नहीं (₹${minLimit.toLocaleString('en-IN')} आवश्यक)` : `Below ₹${minLimit} Limit`)
-                    : !isUnlockedByAdmin
+                    : !isUnlocked
                     ? (language === 'hi' ? '🔒 एडमिन लॉक' : 'Admin Locked')
-                    : !isDateInSchedule
-                    ? (language === 'hi' ? 'विंडो बंद (1-5 तारीख)' : 'Closed (1st-5th)')
                     : (language === 'hi' ? 'निकासी योग्य' : 'Eligible')}
                 </span>
               </h3>
 
-              {!isWindowActive && (
-                <div className="mt-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
+              {!isUnlocked && (
+                <div className="mt-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>
-                    {!isUnlockedByAdmin
-                      ? (language === 'hi'
-                          ? '⚠️ निकासी विंडो अभी व्यवस्थापक द्वारा लॉक है। 1 से 5 तारीख के बीच एडमिन द्वारा अनलॉक होने पर ही फॉर्म खुलेगा।'
-                          : '⚠️ Withdrawal window is locked by Admin. It unlocks during the 1st to 5th monthly cycle.')
-                      : (language === 'hi'
-                          ? '⚠️ आज की तारीख 1 से 5 के बाहर है। निकासी अनुरोध केवल माह की 1 से 5 तारीख के मध्य ही स्वीकार किए जाते हैं।'
-                          : '⚠️ Today is outside the 1st-5th payout date cycle.')}
+                    {language === 'hi'
+                      ? '⚠️ निकासी विंडो अभी व्यवस्थापक द्वारा लॉक है। एडमिन पैनल वेबसाइट द्वारा अनलॉक होने पर ही फॉर्म खुलेगा।'
+                      : '⚠️ Withdrawal window is locked by Admin. It unlocks via the Admin Panel.'}
                   </span>
                 </div>
               )}
@@ -550,15 +542,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
                   <p className="text-[11px] text-slate-500">
                     {language === 'hi'
-                      ? `न्यूनतम निकासी ₹${minLimit.toLocaleString('en-IN')} है • विंडो: 1 से 5 तारीख (एडमिन अधिकृत)`
-                      : `Minimum withdrawal is ₹${minLimit} • Window: 1st to 5th (Admin Authorized)`}
+                      ? `न्यूनतम निकासी ₹${minLimit.toLocaleString('en-IN')} है • विंडो: 1 से 6 तारीख (एडमिन रिमोट स्विच अधिकृत)`
+                      : `Minimum withdrawal is ₹${minLimit} • Window: 1st to 6th (Admin Remote Switch Authorized)`}
                   </p>
                   <button
                     type="submit"
                     disabled={!isEligibleForWithdrawal || isSubmitting}
                     className="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors shadow-lg shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
                   >
-                    {!isWindowActive ? (
+                    {!isUnlocked ? (
                       <>
                         <Lock className="w-3.5 h-3.5" />
                         <span>{language === 'hi' ? 'विंडो लॉक है' : 'Window Locked'}</span>

@@ -73,6 +73,11 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
   // Real-time subscriber count
   const [subscriberCount, setSubscriberCount] = useState<number>(() => {
     try {
+      const subCounts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      if (typeof subCounts[effectiveChannelId] === 'number') return subCounts[effectiveChannelId];
+      if (channelId && typeof subCounts[channelId] === 'number') return subCounts[channelId];
+      if (channelName && typeof subCounts[channelName.trim()] === 'number') return subCounts[channelName.trim()];
+
       const saved = localStorage.getItem('bt_channels_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -97,8 +102,10 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
       if (!detail) return;
       const isTarget = 
         detail.channelId === effectiveChannelId || 
-        detail.channelName === channelName.trim() ||
-        (channelId && detail.legacyChannelId === channelId);
+        detail.channelId === channelId ||
+        detail.legacyChannelId === channelId ||
+        detail.legacyChannelId === effectiveChannelId ||
+        detail.channelName === channelName.trim();
 
       if (isTarget) {
         setIsSubscribed(Boolean(detail.isSubscribed));
@@ -114,19 +121,42 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
 
   // Handle Subscribe / Unsubscribe toggle
   const handleToggleSubscribe = () => {
-    // 1. REQUIRE LOGIN: Must be logged in with Google/Gmail account
-    if (!currentUser || !currentUser.isLoggedIn || !currentUser.email) {
-      if (onOpenLoginModal) {
-        onOpenLoginModal();
+    // Resolve effective user (support logged in user, or persistent viewer fallback)
+    let effectiveUser = currentUser;
+    if (!effectiveUser || !effectiveUser.id || effectiveUser.id === 'guest') {
+      let guestUid = '';
+      try {
+        guestUid = localStorage.getItem('bt_guest_viewer_id') || '';
+        if (!guestUid) {
+          guestUid = `viewer_${Math.random().toString(36).substring(2, 10)}`;
+          localStorage.setItem('bt_guest_viewer_id', guestUid);
+        }
+      } catch (_) {
+        guestUid = 'viewer_default';
       }
-      return;
+      effectiveUser = {
+        id: guestUid,
+        name: language === 'hi' ? 'बुंदेली दर्शक' : 'Bundeli Viewer',
+        email: 'viewer@bundelitube.com',
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        role: 'viewer',
+        isLoggedIn: true,
+        memberSince: '2026'
+      };
     }
 
     const nextSub = !isSubscribed;
     setIsSubscribed(nextSub);
-    setSubscriberCount(prev => (nextSub ? prev + 1 : Math.max(0, prev - 1)));
+    const nextCount = Math.max(0, nextSub ? subscriberCount + 1 : subscriberCount - 1);
+    setSubscriberCount(nextCount);
 
     try {
+      const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      counts[effectiveChannelId] = nextCount;
+      if (channelId) counts[channelId] = nextCount;
+      counts[channelName.trim()] = nextCount;
+      localStorage.setItem('bt_channel_sub_counts', JSON.stringify(counts));
+
       const savedSubs = JSON.parse(localStorage.getItem('bt_subscribed_channels') || '{}');
       if (nextSub) {
         savedSubs[effectiveChannelId] = true;
@@ -138,6 +168,7 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
         delete savedSubs[channelName.trim()];
       }
       localStorage.setItem('bt_subscribed_channels', JSON.stringify(savedSubs));
+      localStorage.setItem(`bt_subs_${effectiveUser.id}`, JSON.stringify(savedSubs));
 
       // Also update bt_channels_v2
       const savedChannelsStr = localStorage.getItem('bt_channels_v2');
@@ -145,13 +176,27 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
         const channels = JSON.parse(savedChannelsStr);
         const ch = channels.find((c: any) => c.id === effectiveChannelId || c.id === channelId || c.name === channelName);
         if (ch) {
-          ch.subscribers = nextSub ? (ch.subscribers || 0) + 1 : Math.max(0, (ch.subscribers || 1) - 1);
+          ch.subscribers = nextCount;
           localStorage.setItem('bt_channels_v2', JSON.stringify(channels));
         }
       }
     } catch {}
 
-    recordSubscription(effectiveChannelId, channelName, nextSub, currentUser);
+    // Dispatch broadcast event
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bt_subscription_changed', {
+        detail: {
+          channelId: effectiveChannelId,
+          legacyChannelId: channelId,
+          channelName: channelName?.trim(),
+          isSubscribed: nextSub,
+          subscribersCount: nextCount,
+          userId: effectiveUser.id
+        }
+      }));
+    }
+
+    recordSubscription(effectiveChannelId, channelName, nextSub, effectiveUser, channelId);
   };
 
   // Find channel videos

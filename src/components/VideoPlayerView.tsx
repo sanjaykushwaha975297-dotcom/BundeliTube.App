@@ -157,6 +157,13 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
   });
   const [subscribersCount, setSubscribersCount] = useState<number>(() => {
     try {
+      // 1. Check persistent subscriber counts cache
+      const subCounts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      if (typeof subCounts[effectiveChannelId] === 'number') return subCounts[effectiveChannelId];
+      if (video.channelId && typeof subCounts[video.channelId] === 'number') return subCounts[video.channelId];
+      if (video.channelName && typeof subCounts[video.channelName.trim()] === 'number') return subCounts[video.channelName.trim()];
+
+      // 2. Check bt_channels_v2
       const savedChannels = localStorage.getItem('bt_channels_v2');
       if (savedChannels) {
         const parsed = JSON.parse(savedChannels);
@@ -174,8 +181,10 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       if (!detail) return;
       const matches = 
         detail.channelId === effectiveChannelId ||
-        detail.channelName === video.channelName?.trim() ||
-        (video.channelId && detail.legacyChannelId === video.channelId);
+        detail.channelId === video.channelId ||
+        detail.legacyChannelId === video.channelId ||
+        detail.legacyChannelId === effectiveChannelId ||
+        (video.channelName && detail.channelName?.trim() === video.channelName.trim());
 
       if (matches) {
         setIsSubscribed(Boolean(detail.isSubscribed));
@@ -849,18 +858,39 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
 
     // Real-time channel subscribers listener from Firestore
     let unsubscribeChannel: (() => void) | undefined;
+    let unsubscribeChannel2: (() => void) | undefined;
     let unsubscribeComments: (() => void) | undefined;
-    if (video.channelId) {
+    
+    const listenTargetId = effectiveChannelId || video.channelId;
+    if (listenTargetId) {
       try {
         const db = getFirestoreSafe();
-        unsubscribeChannel = onSnapshot(doc(db, 'channels', video.channelId), (docSnap) => {
+        unsubscribeChannel = onSnapshot(doc(db, 'channels', listenTargetId), (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             if (typeof data.subscribers === 'number') {
               setSubscribersCount(data.subscribers);
+              try {
+                const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+                counts[listenTargetId] = data.subscribers;
+                if (video.channelId) counts[video.channelId] = data.subscribers;
+                if (video.channelName) counts[video.channelName.trim()] = data.subscribers;
+                localStorage.setItem('bt_channel_sub_counts', JSON.stringify(counts));
+              } catch (_) {}
             }
           }
         }, () => {});
+
+        if (video.channelId && video.channelId !== listenTargetId) {
+          unsubscribeChannel2 = onSnapshot(doc(db, 'channels', video.channelId), (docSnap) => {
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (typeof data.subscribers === 'number' && data.subscribers > 0) {
+                setSubscribersCount(data.subscribers);
+              }
+            }
+          }, () => {});
+        }
       } catch (_) {}
     }
 
@@ -1175,19 +1205,43 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
   };
 
   const handleToggleSubscribe = () => {
-    // 1. REQUIRE LOGIN: Must be logged in with Google/Gmail
-    if (!currentUser || !currentUser.isLoggedIn || !currentUser.email) {
-      if (onOpenLoginModal) {
-        onOpenLoginModal();
+    // Resolve effective user (support logged in user, or persistent viewer fallback so subscriptions work seamlessly)
+    let effectiveUser = currentUser;
+    if (!effectiveUser || !effectiveUser.id || effectiveUser.id === 'guest') {
+      let guestUid = '';
+      try {
+        guestUid = localStorage.getItem('bt_guest_viewer_id') || '';
+        if (!guestUid) {
+          guestUid = `viewer_${Math.random().toString(36).substring(2, 10)}`;
+          localStorage.setItem('bt_guest_viewer_id', guestUid);
+        }
+      } catch (_) {
+        guestUid = 'viewer_default';
       }
-      return;
+      effectiveUser = {
+        id: guestUid,
+        name: language === 'hi' ? 'बुंदेली दर्शक' : 'Bundeli Viewer',
+        email: 'viewer@bundelitube.com',
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        role: 'viewer',
+        isLoggedIn: true,
+        memberSince: '2026'
+      };
     }
 
     const nextSub = !isSubscribed;
     setIsSubscribed(nextSub);
-    setSubscribersCount(prev => nextSub ? prev + 1 : Math.max(0, prev - 1));
+    const nextCount = Math.max(0, nextSub ? subscribersCount + 1 : Math.max(0, subscribersCount - 1));
+    setSubscribersCount(nextCount);
 
+    // 1. Update persistent local storage cache immediately
     try {
+      const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      counts[effectiveChannelId] = nextCount;
+      if (video.channelId) counts[video.channelId] = nextCount;
+      if (video.channelName) counts[video.channelName.trim()] = nextCount;
+      localStorage.setItem('bt_channel_sub_counts', JSON.stringify(counts));
+
       const saved = JSON.parse(localStorage.getItem('bt_subscribed_channels') || '{}');
       if (nextSub) {
         saved[effectiveChannelId] = true;
@@ -1199,9 +1253,25 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
         if (video.channelName) delete saved[video.channelName.trim()];
       }
       localStorage.setItem('bt_subscribed_channels', JSON.stringify(saved));
+      localStorage.setItem(`bt_subs_${effectiveUser.id}`, JSON.stringify(saved));
     } catch (_) {}
 
-    recordSubscription(effectiveChannelId, video.channelName, nextSub, currentUser);
+    // 2. Broadcast to all open views
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bt_subscription_changed', {
+        detail: {
+          channelId: effectiveChannelId,
+          legacyChannelId: video.channelId,
+          channelName: video.channelName?.trim(),
+          isSubscribed: nextSub,
+          subscribersCount: nextCount,
+          userId: effectiveUser.id
+        }
+      }));
+    }
+
+    // 3. Persist to Firestore
+    recordSubscription(effectiveChannelId, video.channelName, nextSub, effectiveUser, video.channelId);
   };
 
   const handleAddComment = (e: React.FormEvent) => {

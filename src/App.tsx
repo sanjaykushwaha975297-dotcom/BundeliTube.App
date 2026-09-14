@@ -88,7 +88,8 @@ import {
   deleteVideoFromFirestore,
   deleteChannelFromFirestore,
   updateChannelLogoGlobally,
-  fetchUserSubscriptionsFromFirestore
+  fetchUserSubscriptionsFromFirestore,
+  normalizeChannelId
 } from './lib/firebase';
 import { isSelfViewFraud, canCreditWalletFromClient } from './lib/monetizationSecurity';
 import { harmonizeVideoAvatars, propagateChannelLogoAcrossState } from './lib/channelSync';
@@ -910,13 +911,29 @@ export default function App() {
       const effectiveApprovalStatus = isApproved ? 'approved' : isRejected ? 'rejected' : 'pending';
       const effectiveKycStatus = isApproved ? 'verified' : isRejected ? 'not_submitted' : 'pending';
 
+      const incomingSubs = typeof data.subscribers === 'number' ? Number(data.subscribers) : undefined;
+      let storedCount = 0;
+      try {
+        const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+        if (docId && typeof counts[docId] === 'number') storedCount = Math.max(storedCount, counts[docId]);
+        if (prev.id && typeof counts[prev.id] === 'number') storedCount = Math.max(storedCount, counts[prev.id]);
+        if (prev.name && typeof counts[prev.name] === 'number') storedCount = Math.max(storedCount, counts[prev.name]);
+        if (data.channelName && typeof counts[data.channelName] === 'number') storedCount = Math.max(storedCount, counts[data.channelName]);
+      } catch (_) {}
+
+      const effectiveSubscribers = Math.max(
+        incomingSubs !== undefined ? incomingSubs : 0,
+        storedCount,
+        typeof prev.subscribers === 'number' ? prev.subscribers : 0
+      );
+
       const nextChan: Channel = {
         id: docId || data.id || prev.id || `chan-${data.ownerUid || data.uid || Date.now()}`,
         name: data.channelName || data.name || prev.name,
         handle: data.handle || prev.handle,
         avatar: data.channelLogoUrl || data.avatarUrl || data.avatar || prev.avatar,
         banner: data.bannerUrl || data.banner || prev.banner,
-        subscribers: typeof data.subscribers === 'number' ? Number(data.subscribers) : prev.subscribers,
+        subscribers: effectiveSubscribers,
         totalViews: typeof data.totalViews === 'number' ? Number(data.totalViews) : prev.totalViews,
         videoCount: typeof data.videoCount === 'number' ? Number(data.videoCount) : prev.videoCount,
         cpmRate: typeof data.cpmRate === 'number' ? Number(data.cpmRate) : prev.cpmRate,
@@ -1035,6 +1052,33 @@ export default function App() {
       });
     }
   };
+
+  // Real-time synchronization of current creator's channel subscriber count on subscription events
+  useEffect(() => {
+    const handleGlobalSubChange = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      setChannel(prev => {
+        const normPrevId = normalizeChannelId(prev.id, prev.name);
+        const isMatch = 
+          prev.id === detail.channelId ||
+          prev.id === detail.legacyChannelId ||
+          normPrevId === detail.channelId ||
+          (prev.name && prev.name.trim() === detail.channelName);
+
+        if (isMatch && typeof detail.subscribersCount === 'number') {
+          return {
+            ...prev,
+            subscribers: detail.subscribersCount
+          };
+        }
+        return prev;
+      });
+    };
+
+    window.addEventListener('bt_subscription_changed', handleGlobalSubChange);
+    return () => window.removeEventListener('bt_subscription_changed', handleGlobalSubChange);
+  }, []);
 
   // Firestore Real-Time Videos, Channels, Banners, and Submissions Sync
   useEffect(() => {
@@ -1284,12 +1328,24 @@ export default function App() {
 
       // 5. Remote config & Ad data sync
       let configUnsub = () => {};
+      let withdrawalSettingsUnsub = () => {};
       try {
         configUnsub = onSnapshot(doc(db, 'config', 'app_config'), (configDoc) => {
           if (configDoc.exists()) {
             const cfg = configDoc.data() as Partial<RemoteAppConfig>;
             setRemoteConfig(prev => {
               const merged = { ...prev, ...cfg };
+              safeStorage.setJSON('bt_remote_config', merged);
+              return merged;
+            });
+          }
+        }, () => {});
+
+        withdrawalSettingsUnsub = onSnapshot(doc(db, 'config', 'withdrawal_settings'), (wDoc) => {
+          if (wDoc.exists()) {
+            const wCfg = wDoc.data() as Partial<RemoteAppConfig>;
+            setRemoteConfig(prev => {
+              const merged = { ...prev, ...wCfg };
               safeStorage.setJSON('bt_remote_config', merged);
               return merged;
             });
@@ -1376,6 +1432,7 @@ export default function App() {
         userUnsub();
         walletUnsub();
         configUnsub();
+        withdrawalSettingsUnsub();
         bannerUnsub();
         notifUnsub();
         smsUnsub();

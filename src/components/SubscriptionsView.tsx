@@ -27,12 +27,15 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
     const map = new Map<string, SubscribedChannel>();
     let savedChannelsMap: Record<string, number> = {};
     try {
+      const subCounts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      Object.assign(savedChannelsMap, subCounts);
+
       const saved = localStorage.getItem('bt_channels_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
         parsed.forEach((c: any) => {
-          if (c.id) savedChannelsMap[c.id] = c.subscribers || 0;
-          if (c.name) savedChannelsMap[c.name] = c.subscribers || 0;
+          if (c.id && typeof savedChannelsMap[c.id] !== 'number') savedChannelsMap[c.id] = c.subscribers || 0;
+          if (c.name && typeof savedChannelsMap[c.name] !== 'number') savedChannelsMap[c.name] = c.subscribers || 0;
         });
       }
     } catch (_) {}

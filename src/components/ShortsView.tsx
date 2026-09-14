@@ -111,7 +111,13 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
       if (!detail) return;
       setShortsList(prev => prev.map(s => {
         const normKey = normalizeChannelId((s as any).channelId, s.channelName);
-        if (normKey === detail.channelId || s.channelName?.trim() === detail.channelName) {
+        const legacyId = (s as any).channelId;
+        if (
+          normKey === detail.channelId || 
+          normKey === detail.legacyChannelId ||
+          (legacyId && (legacyId === detail.legacyChannelId || legacyId === detail.channelId)) ||
+          s.channelName?.trim() === detail.channelName
+        ) {
           return { ...s, isSubscribed: Boolean(detail.isSubscribed) };
         }
         return s;
@@ -120,6 +126,7 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
         setChannelSubscribersMap(prev => ({
           ...prev,
           [detail.channelId]: detail.subscribersCount,
+          ...(detail.legacyChannelId ? { [detail.legacyChannelId]: detail.subscribersCount } : {}),
           ...(detail.channelName ? { [detail.channelName]: detail.subscribersCount } : {})
         }));
       }
@@ -166,12 +173,15 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
   const [channelSubscribersMap, setChannelSubscribersMap] = useState<Record<string, number>>(() => {
     const map: Record<string, number> = {};
     try {
+      const subCounts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      Object.assign(map, subCounts);
+
       const savedChannels = localStorage.getItem('bt_channels_v2');
       if (savedChannels) {
         const parsed = JSON.parse(savedChannels);
         parsed.forEach((c: any) => {
-          if (c.id) map[c.id] = c.subscribers || 0;
-          if (c.name) map[c.name] = c.subscribers || 0;
+          if (c.id && typeof map[c.id] !== 'number') map[c.id] = c.subscribers || 0;
+          if (c.name && typeof map[c.name] !== 'number') map[c.name] = c.subscribers || 0;
         });
       }
     } catch (_) {}
@@ -615,16 +625,33 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
   const handleToggleSubscribe = () => {
     if (!currentShort) return;
 
-    // 1. REQUIRE LOGIN: Must be logged in with Google/Gmail
-    if (!currentUser || !currentUser.isLoggedIn || !currentUser.email) {
-      if (onOpenLoginModal) {
-        onOpenLoginModal();
+    // Resolve effective user (support logged in user, or persistent viewer fallback)
+    let effectiveUser = currentUser;
+    if (!effectiveUser || !effectiveUser.id || effectiveUser.id === 'guest') {
+      let guestUid = '';
+      try {
+        guestUid = localStorage.getItem('bt_guest_viewer_id') || '';
+        if (!guestUid) {
+          guestUid = `viewer_${Math.random().toString(36).substring(2, 10)}`;
+          localStorage.setItem('bt_guest_viewer_id', guestUid);
+        }
+      } catch (_) {
+        guestUid = 'viewer_default';
       }
-      return;
+      effectiveUser = {
+        id: guestUid,
+        name: language === 'hi' ? 'बुंदेली दर्शक' : 'Bundeli Viewer',
+        email: 'viewer@bundelitube.com',
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        role: 'viewer',
+        isLoggedIn: true,
+        memberSince: '2026'
+      };
     }
 
     const isNowSubbed = !currentShort.isSubscribed;
-    const normKey = normalizeChannelId((currentShort as any).channelId, currentShort.channelName);
+    const rawChanId = (currentShort as any).channelId;
+    const normKey = normalizeChannelId(rawChanId, currentShort.channelName);
 
     setShortsList(prev => prev.map((s, idx) => {
       if (idx === currentIndex) {
@@ -633,27 +660,57 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
       return s;
     }));
 
+    const currentCount = channelSubscribersMap[normKey] || 
+                         (rawChanId && channelSubscribersMap[rawChanId]) || 
+                         (currentShort.channelName && channelSubscribersMap[currentShort.channelName]) || 
+                         0;
+    const nextCount = Math.max(0, isNowSubbed ? currentCount + 1 : currentCount - 1);
+
     setChannelSubscribersMap(prev => {
-      const current = prev[normKey] || prev[currentShort.channelName] || 0;
-      const next = isNowSubbed ? current + 1 : Math.max(0, current - 1);
-      return { ...prev, [normKey]: next, [currentShort.channelName]: next };
+      return { 
+        ...prev, 
+        [normKey]: nextCount, 
+        ...(rawChanId ? { [rawChanId]: nextCount } : {}),
+        [currentShort.channelName]: nextCount 
+      };
     });
 
     try {
+      const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      counts[normKey] = nextCount;
+      if (rawChanId) counts[rawChanId] = nextCount;
+      if (currentShort.channelName) counts[currentShort.channelName.trim()] = nextCount;
+      localStorage.setItem('bt_channel_sub_counts', JSON.stringify(counts));
+
       const savedSubs = JSON.parse(localStorage.getItem('bt_subscribed_channels') || '{}');
       if (isNowSubbed) {
         savedSubs[normKey] = true;
-        if ((currentShort as any).channelId) savedSubs[(currentShort as any).channelId] = true;
+        if (rawChanId) savedSubs[rawChanId] = true;
         if (currentShort.channelName) savedSubs[currentShort.channelName.trim()] = true;
       } else {
         delete savedSubs[normKey];
-        if ((currentShort as any).channelId) delete savedSubs[(currentShort as any).channelId];
+        if (rawChanId) delete savedSubs[rawChanId];
         if (currentShort.channelName) delete savedSubs[currentShort.channelName.trim()];
       }
       localStorage.setItem('bt_subscribed_channels', JSON.stringify(savedSubs));
+      localStorage.setItem(`bt_subs_${effectiveUser.id}`, JSON.stringify(savedSubs));
     } catch (_) {}
 
-    recordSubscription(normKey, currentShort.channelName, isNowSubbed, currentUser);
+    // Dispatch broadcast event
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bt_subscription_changed', {
+        detail: {
+          channelId: normKey,
+          legacyChannelId: rawChanId,
+          channelName: currentShort.channelName?.trim(),
+          isSubscribed: isNowSubbed,
+          subscribersCount: nextCount,
+          userId: effectiveUser.id
+        }
+      }));
+    }
+
+    recordSubscription(normKey, currentShort.channelName, isNowSubbed, effectiveUser, rawChanId);
   };
 
   // Helper to format short title strictly into a clean single line without hashtags (#trending, #viral, etc.) or trending words

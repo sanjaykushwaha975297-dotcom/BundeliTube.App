@@ -40,8 +40,11 @@ export const StudioEarnTab: React.FC<StudioEarnTabProps> = ({
   const progressPercent = Math.min(100, Math.round((wallet.currentBalance / minLimit) * 100));
   const isEligible = wallet.currentBalance >= minLimit;
 
-  // Withdrawal window lock state
-  const isWithdrawalLocked = remoteConfig?.withdrawalPageLocked === true || remoteConfig?.isWithdrawalWindowUnlocked !== true;
+  // ✅ एडमिन पैनल के रिमोट स्विच का सीधा पालन करें (रिमोट स्विच का मान ही निर्णायक है):
+  // User rule:
+  // bool isUnlocked = config['isWithdrawalWindowUnlocked'] == true || config['withdrawalPageLocked'] == false;
+  const isUnlocked = remoteConfig?.isWithdrawalWindowUnlocked === true || remoteConfig?.withdrawalPageLocked === false;
+  const isWithdrawalLocked = !isUnlocked;
   const windowDatesText = remoteConfig?.withdrawalWindowDatesText || '1 से 6 तारीख';
 
   return (
