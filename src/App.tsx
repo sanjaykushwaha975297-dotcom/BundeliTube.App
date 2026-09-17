@@ -948,7 +948,14 @@ export default function App() {
         panNumber: data.panNumber || prev.panNumber,
         panCardHolderName: data.panCardHolderName || prev.panCardHolderName,
         panPhotoUrl: data.panPhotoUrl || prev.panPhotoUrl,
-        bankDetails: data.bankDetails || prev.bankDetails
+        bankDetails: {
+          bankName: data.bankDetails?.bankName || data.bankName || prev.bankDetails?.bankName || '',
+          accountHolder: data.bankDetails?.accountHolder || data.accountHolder || data.panCardHolderName || prev.bankDetails?.accountHolder || prev.panCardHolderName || '',
+          accountNumber: data.bankDetails?.accountNumber || data.accountNumber || prev.bankDetails?.accountNumber || '',
+          ifscCode: data.bankDetails?.ifscCode || data.ifscCode || prev.bankDetails?.ifscCode || '',
+          branchName: data.bankDetails?.branchName || data.branchName || prev.bankDetails?.branchName || '',
+          upiId: data.bankDetails?.upiId || data.upiId || prev.bankDetails?.upiId || ''
+        }
       };
 
       if (
@@ -960,12 +967,18 @@ export default function App() {
         prev.avatar === nextChan.avatar &&
         prev.banner === nextChan.banner &&
         prev.approvalStatus === nextChan.approvalStatus &&
-        prev.kycStatus === nextChan.kycStatus
+        prev.kycStatus === nextChan.kycStatus &&
+        prev.bankDetails?.accountNumber === nextChan.bankDetails?.accountNumber &&
+        prev.bankDetails?.ifscCode === nextChan.bankDetails?.ifscCode &&
+        prev.bankDetails?.upiId === nextChan.bankDetails?.upiId
       ) {
         return prev;
       }
       if (targetUid) {
         safeStorage.setJSON(`bt_channel_${targetUid}`, nextChan);
+        if (nextChan.bankDetails?.accountNumber || nextChan.bankDetails?.upiId) {
+          safeStorage.setJSON(`bt_bank_details_${targetUid}`, nextChan.bankDetails);
+        }
       }
       safeStorage.removeItem('bt_channel');
       return nextChan;
@@ -1074,6 +1087,25 @@ export default function App() {
         }
         return prev;
       });
+
+      if (typeof detail.subscribersCount === 'number') {
+        setVideos(prev => prev.map(v => {
+          const normVidChanId = normalizeChannelId(v.channelId, v.channelName);
+          const isMatch = 
+            v.channelId === detail.channelId ||
+            v.channelId === detail.legacyChannelId ||
+            normVidChanId === detail.channelId ||
+            (v.channelName && v.channelName.trim() === detail.channelName);
+          if (isMatch) {
+            return {
+              ...v,
+              subscribers: detail.subscribersCount,
+              channelSubscribers: detail.subscribersCount
+            };
+          }
+          return v;
+        }));
+      }
     };
 
     window.addEventListener('bt_subscription_changed', handleGlobalSubChange);
@@ -1324,6 +1356,80 @@ export default function App() {
             });
           }
         }, (err) => console.warn('Wallet doc live sync note:', err));
+
+        // Real-time live listener for creator's withdrawal requests status updates (completed / rejected)
+        let withdrawalRequestsUnsub = () => {};
+        try {
+          const wq = query(collection(db, 'withdrawal_requests'), where('creatorUid', '==', myUid));
+          withdrawalRequestsUnsub = onSnapshot(wq, (snap) => {
+            if (!snap.empty) {
+              setWallet(prev => {
+                let changed = false;
+                let refundAmount = 0;
+                const updatedTxs = [...prev.transactions];
+
+                snap.docs.forEach((d) => {
+                  const data = d.data();
+                  const reqId = d.id;
+                  const reqStatus = data.status; // 'pending' | 'completed' | 'rejected'
+
+                  const txIdx = updatedTxs.findIndex(t => 
+                    t.refId === reqId || 
+                    t.id === reqId || 
+                    (t.type === 'withdrawal' && Math.abs(t.amount - Number(data.amount)) < 0.01 && t.status === 'pending')
+                  );
+                  if (txIdx >= 0) {
+                    const currentTxStatus = updatedTxs[txIdx].status;
+                    if (currentTxStatus !== reqStatus) {
+                      // 🛡️ If admin rejected a pending withdrawal, refund money back to creator wallet!
+                      if (currentTxStatus === 'pending' && reqStatus === 'rejected') {
+                        refundAmount += Number(data.amount || updatedTxs[txIdx].amount || 0);
+                      }
+
+                      updatedTxs[txIdx] = {
+                        ...updatedTxs[txIdx],
+                        refId: reqId,
+                        status: reqStatus === 'completed' ? 'completed' : reqStatus === 'rejected' ? 'rejected' : 'pending',
+                        note: reqStatus === 'completed'
+                          ? `✅ एडमिन द्वारा विड्रॉल भुगतान सफल ${data.transactionUtr ? `(UTR: ${data.transactionUtr})` : ''}`
+                          : reqStatus === 'rejected'
+                          ? `❌ विड्रॉल अस्वीकृत (पैसे वॉलेट में वापस जोड़े गए): ${data.rejectionReason || data.reason || 'अस्वीकृत'}`
+                          : updatedTxs[txIdx].note
+                      };
+                      changed = true;
+                    }
+                  }
+                });
+
+                if (changed) {
+                  const newCurrentBal = Math.round((prev.currentBalance + refundAmount) * 100) / 100;
+                  const newWithdrawn = Math.max(0, Math.round(((prev.totalWithdrawn || 0) - refundAmount) * 100) / 100);
+
+                  const updatedWallet: CreatorWallet = {
+                    ...prev,
+                    currentBalance: newCurrentBal,
+                    totalWithdrawn: newWithdrawn,
+                    transactions: updatedTxs
+                  };
+                  safeStorage.setJSON('bt_wallet', updatedWallet);
+
+                  // If money was refunded, write immediately to Firestore wallets/{myUid}
+                  if (refundAmount > 0) {
+                    setDoc(doc(db, 'wallets', myUid), {
+                      currentBalance: newCurrentBal,
+                      totalWithdrawn: newWithdrawn,
+                      transactions: updatedTxs,
+                      updatedAt: new Date().toISOString()
+                    }, { merge: true }).catch(() => {});
+                  }
+
+                  return updatedWallet;
+                }
+                return prev;
+              });
+            }
+          }, () => {});
+        } catch (_) {}
       }
 
       // 5. Remote config & Ad data sync
@@ -1948,7 +2054,21 @@ export default function App() {
 
   const handleChannelSubmitted = (submission: ChannelSubmission) => {
     const effectiveLogo = submission.channelAvatar || submission.channelLogoUrl || submission.avatarUrl || currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
-    const effectiveChanId = submission.id || `BT-CH-${(submission.channelName || 'CREATOR').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)}-${(submission.mobileNumber || '').slice(-4) || '2026'}`;
+    const effectiveChanId = submission.id || `BT-CH-${(submission.channelName || 'CREATOR').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const isAlreadyApprovedCreator = channel.approvalStatus === 'approved' || currentUser?.role === 'creator';
+    
+    const effectiveUid = currentUser?.id || submission.ownerUid || '';
+    const bankPayload = {
+      bankName: submission.bankName || submission.bankDetails?.bankName || '',
+      accountHolder: submission.accountHolder || submission.bankDetails?.accountHolder || '',
+      accountNumber: submission.accountNumber || submission.bankDetails?.accountNumber || '',
+      ifscCode: submission.ifscCode || submission.bankDetails?.ifscCode || '',
+      branchName: submission.branchName || submission.bankDetails?.branchName || '',
+      upiId: submission.upiId || submission.bankDetails?.upiId || '',
+      mobileNumber: submission.mobileNumber || '',
+      panNumber: submission.panNumber || ''
+    };
+
     const newChan: Channel = {
       id: effectiveChanId,
       name: submission.channelName,
@@ -1961,7 +2081,7 @@ export default function App() {
       isVerified: false,
       approvalStatus: 'pending',
       kycStatus: 'pending',
-      ownerUid: currentUser?.id || submission.ownerUid || '',
+      ownerUid: effectiveUid,
       mobileNumber: submission.mobileNumber,
       panNumber: submission.panNumber,
       panPhotoUrl: submission.panPhotoUrl,
@@ -1969,23 +2089,28 @@ export default function App() {
       aadhaarPhotoUrl: submission.aadhaarPhotoUrl,
       aadhaarFrontPhotoUrl: submission.aadhaarFrontPhotoUrl,
       aadhaarBackPhotoUrl: submission.aadhaarBackPhotoUrl,
-      bankDetails: {
-        bankName: submission.bankName,
-        accountHolder: submission.accountHolder,
-        accountNumber: submission.accountNumber,
-        ifscCode: submission.ifscCode,
-        branchName: submission.branchName,
-        upiId: submission.upiId
-      },
+      bankDetails: bankPayload,
       totalViews: 0,
       videoCount: 0,
       cpmRate: 35.00
     };
 
-    setChannel(newChan);
-    safeStorage.setJSON('bt_channel', newChan);
+    if (!isAlreadyApprovedCreator) {
+      setChannel(newChan);
+    } else {
+      setChannel(prev => ({
+        ...prev,
+        bankDetails: bankPayload
+      }));
+    }
 
-    if (currentUser) {
+    if (effectiveUid) {
+      safeStorage.setJSON(`bt_channel_${effectiveUid}`, isAlreadyApprovedCreator ? { ...channel, bankDetails: bankPayload } : newChan);
+      safeStorage.setJSON(`bt_bank_details_${effectiveUid}`, bankPayload);
+      safeStorage.setJSON('bt_bank_details', bankPayload);
+    }
+
+    if (currentUser && !isAlreadyApprovedCreator) {
       const updatedUser: UserAccount = {
         ...currentUser,
         channelStatus: 'pending',
@@ -2025,25 +2150,29 @@ export default function App() {
           serverTimestamp: serverTimestamp()
         }), { merge: true }).catch(err => console.warn('Firestore channel_submissions write error:', err));
 
-        // 2. Remove any old unapproved/duplicate pending document in channels collection
+        // 2. Remove unapproved/duplicate pending document in channels collection (preserve approved channels)
         const targetUid = submission.ownerUid || currentUser?.id;
         if (targetUid && targetUid !== 'user') {
-          deleteDoc(doc(db, 'channels', `chan-${targetUid}`)).catch(() => {});
-          deleteDoc(doc(db, 'channels', targetUid)).catch(() => {});
+          if (!isAlreadyApprovedCreator) {
+            deleteDoc(doc(db, 'channels', `chan-${targetUid}`)).catch(() => {});
+            deleteDoc(doc(db, 'channels', targetUid)).catch(() => {});
+          }
           deleteDoc(doc(db, 'channels', effectiveChanId)).catch(() => {});
         }
 
-        // 3. Keep user profile as regular viewer with pending partner program status in users collection
+        // 3. Keep user profile in users collection (preserve approved creators)
         if (targetUid && targetUid !== 'user') {
           setDoc(doc(db, 'users', targetUid), cleanFirestoreData({
-            role: 'viewer', // Keep regular user role until approved
-            channelStatus: 'pending',
-            approvalStatus: 'pending',
-            partnerProgramStatus: 'applied',
-            channelId: pendingSub.id,
-            channelName: pendingSub.channelName,
-            channelHandle: pendingSub.channelHandle,
-            avatar: effectiveLogo,
+            ...(isAlreadyApprovedCreator ? {} : {
+              role: 'viewer', // Keep regular user role until approved
+              channelStatus: 'pending',
+              approvalStatus: 'pending',
+              partnerProgramStatus: 'applied',
+              channelId: pendingSub.id,
+              channelName: pendingSub.channelName,
+              channelHandle: pendingSub.channelHandle,
+              avatar: effectiveLogo,
+            }),
             mobileNumber: submission.mobileNumber,
             updatedAt: serverTimestamp()
           }), { merge: true }).catch(err => console.warn('Firestore user update error:', err));
@@ -2505,7 +2634,7 @@ export default function App() {
       views: 0,
       likes: 0,
       uploadDate: language === 'hi' ? 'अभी-अभी' : 'Just now',
-      duration: targetSub.duration || (isShort ? '0:50' : '4:30'),
+      duration: targetSub.duration || (isShort ? '0:50' : ''),
       thumbnail: targetSub.thumbnailUrl,
       youtubeId: targetSub.youtubeId || targetSub.id,
       youtubeUrl: targetSub.youtubeUrl || (targetSub.youtubeId ? `https://www.youtube.com/watch?v=${targetSub.youtubeId}` : undefined),
@@ -2759,25 +2888,31 @@ export default function App() {
   };
 
   const handleWithdrawalRequested = (amount: number, method: 'UPI' | 'Bank Transfer', target: string) => {
-    setWallet(prev => ({
-      ...prev,
-      currentBalance: prev.currentBalance - amount,
-      totalWithdrawn: prev.totalWithdrawn + amount,
-      transactions: [
-        {
-          id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-          date: language === 'hi' ? 'आज (Today)' : 'Today',
-          amount: amount,
-          type: 'withdrawal',
-          status: 'pending',
-          payoutMethod: method,
-          targetAccount: target,
-          refId: `PAY-${Date.now().toString().slice(-8)}`,
-          note: language === 'hi' ? `${method} द्वारा निकासी अनुरोध दर्ज` : `Withdrawal requested via ${method}`
-        },
-        ...prev.transactions
-      ]
-    }));
+    setWallet(prev => {
+      const newBal = Math.max(0, Math.round((prev.currentBalance - amount) * 100) / 100);
+      const newWithdrawn = Math.round(((prev.totalWithdrawn || 0) + amount) * 100) / 100;
+      const updated: CreatorWallet = {
+        ...prev,
+        currentBalance: newBal,
+        totalWithdrawn: newWithdrawn,
+        transactions: [
+          {
+            id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+            date: language === 'hi' ? 'आज (Today)' : 'Today',
+            amount: amount,
+            type: 'withdrawal',
+            status: 'pending',
+            payoutMethod: method,
+            targetAccount: target,
+            refId: `PAY-${Date.now().toString().slice(-8)}`,
+            note: language === 'hi' ? `${method} द्वारा निकासी अनुरोध दर्ज (लंबित)` : `Withdrawal requested via ${method} (Pending)`
+          },
+          ...prev.transactions
+        ]
+      };
+      safeStorage.setJSON('bt_wallet', updated);
+      return updated;
+    });
   };
 
   const handleOpenCopyrightModalForVideo = (vid: Video) => {
@@ -2955,7 +3090,7 @@ export default function App() {
           views: 0,
           likes: 0,
           commentsCount: 0,
-          duration: sub.duration || '4:30',
+          duration: sub.duration || '',
           uploadDate: sub.createdAt ? new Date(sub.createdAt).toLocaleDateString('hi-IN') : 'समीक्षाधीन',
           isVerified: false,
           isMonetized: true,

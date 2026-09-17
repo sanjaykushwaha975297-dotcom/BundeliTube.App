@@ -764,9 +764,6 @@ export const StudioContentTab: React.FC<StudioContentTabProps> = ({
                                 alt={video.title}
                                 className="w-full h-full object-cover group-hover:scale-105 transition"
                               />
-                              <span className="absolute bottom-1 right-1 bg-slate-950/90 text-amber-300 text-[9px] font-mono px-1 rounded">
-                                {video.duration}
-                              </span>
                               {isPending && (
                                 <div className="absolute top-1 left-1 bg-amber-500 text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded shadow-md flex items-center gap-0.5">
                                   <Clock className="w-2.5 h-2.5" />

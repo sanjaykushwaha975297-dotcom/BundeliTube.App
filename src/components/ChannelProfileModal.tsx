@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import { Video, ShortItem, UserAccount } from '../types';
 import { Language } from '../locales/i18n';
-import { recordSubscription, normalizeChannelId, checkUserSubscribedChannel } from '../lib/firebase';
+import { recordSubscription, normalizeChannelId, checkUserSubscribedChannel, getChannelLiveSubscribers, getFirestoreSafe } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface ChannelProfileModalProps {
   isOpen: boolean;
@@ -95,8 +96,44 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
     return 0;
   });
 
-  // Keep subscription status in sync with global broadcast events
+  // Keep subscription status in sync with global broadcast events & live Firestore
   useEffect(() => {
+    // 1. Initial authoritative check from Firestore + local cache
+    const effectiveUid = currentUser?.id && currentUser.id !== 'guest' 
+      ? currentUser.id 
+      : (typeof window !== 'undefined' ? localStorage.getItem('bt_guest_viewer_id') || '' : '');
+
+    checkUserSubscribedChannel(effectiveChannelId || channelId || '', channelName, effectiveUid).then(sub => {
+      setIsSubscribed(sub);
+    }).catch(() => {});
+
+    getChannelLiveSubscribers(channelId || effectiveChannelId || '', channelName).then(count => {
+      if (typeof count === 'number' && count >= 0) {
+        setSubscriberCount(count);
+      }
+    }).catch(() => {});
+
+    // 2. Real-time Firestore listener
+    let unsubscribeCh: (() => void) | undefined;
+    let unsubscribeSub: (() => void) | undefined;
+    try {
+      const db = getFirestoreSafe();
+      const targetId = channelId || effectiveChannelId;
+      const handleSnap = (snap: any) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (typeof d.subscribers === 'number') {
+            setSubscriberCount(Math.max(0, d.subscribers));
+          }
+        }
+      };
+      if (targetId) {
+        unsubscribeCh = onSnapshot(doc(db, 'channels', targetId), handleSnap, () => {});
+        unsubscribeSub = onSnapshot(doc(db, 'channel_submissions', targetId), handleSnap, () => {});
+      }
+    } catch (_) {}
+
+    // 3. Global broadcast listener
     const handleSubChange = (e: any) => {
       const detail = e.detail;
       if (!detail) return;
@@ -116,8 +153,12 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
     };
 
     window.addEventListener('bt_subscription_changed', handleSubChange);
-    return () => window.removeEventListener('bt_subscription_changed', handleSubChange);
-  }, [effectiveChannelId, channelName, channelId]);
+    return () => {
+      window.removeEventListener('bt_subscription_changed', handleSubChange);
+      if (unsubscribeCh) unsubscribeCh();
+      if (unsubscribeSub) unsubscribeSub();
+    };
+  }, [effectiveChannelId, channelName, channelId, currentUser?.id]);
 
   // Handle Subscribe / Unsubscribe toggle
   const handleToggleSubscribe = () => {
@@ -196,7 +237,7 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
       }));
     }
 
-    recordSubscription(effectiveChannelId, channelName, nextSub, effectiveUser, channelId);
+    recordSubscription(effectiveChannelId, channelName, nextSub, effectiveUser, channelId, nextCount);
   };
 
   // Find channel videos
@@ -486,10 +527,6 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
                           <span>#{idx + 1}</span>
                           <Flame className="w-3 h-3 fill-current" />
                         </div>
-                        {/* Duration */}
-                        <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white">
-                          {video.duration || '04:30'}
-                        </span>
                       </div>
 
                       <h4 className="text-xs sm:text-sm font-semibold text-slate-100 group-hover:text-amber-400 line-clamp-2 leading-snug">
@@ -533,9 +570,6 @@ export const ChannelProfileModal: React.FC<ChannelProfileModalProps> = ({
                           alt={video.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
-                        <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white">
-                          {video.duration || '04:30'}
-                        </span>
                       </div>
 
                       <h4 className="text-xs sm:text-sm font-semibold text-slate-200 group-hover:text-amber-400 line-clamp-2 leading-snug">

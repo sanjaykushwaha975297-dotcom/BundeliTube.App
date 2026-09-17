@@ -169,9 +169,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   <Mic2 className="w-3 h-3" />
                   <span>Podcast / Talk</span>
                 </div>
-                <span className="absolute bottom-3 right-3 px-2 py-0.5 rounded bg-black/80 text-white text-[10px] font-mono">
-                  {video.duration}
-                </span>
               </div>
               <div>
                 <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition line-clamp-2">

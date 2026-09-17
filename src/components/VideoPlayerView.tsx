@@ -852,44 +852,46 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
       setHasLiked(liked);
     }).catch(() => {});
 
-    checkUserSubscribedChannel(video.channelId || 'chan-main', currentUser?.id).then(sub => {
+    const effectiveViewerUid = currentUser?.id && currentUser.id !== 'guest' 
+      ? currentUser.id 
+      : (typeof window !== 'undefined' ? localStorage.getItem('bt_guest_viewer_id') || '' : '');
+
+    checkUserSubscribedChannel(effectiveChannelId || video.channelId, video.channelName, effectiveViewerUid).then(sub => {
       setIsSubscribed(sub);
     }).catch(() => {});
 
     // Real-time channel subscribers listener from Firestore
     let unsubscribeChannel: (() => void) | undefined;
     let unsubscribeChannel2: (() => void) | undefined;
+    let unsubscribeChannelSub: (() => void) | undefined;
     let unsubscribeComments: (() => void) | undefined;
     
     const listenTargetId = effectiveChannelId || video.channelId;
     if (listenTargetId) {
       try {
         const db = getFirestoreSafe();
-        unsubscribeChannel = onSnapshot(doc(db, 'channels', listenTargetId), (docSnap) => {
+        const handleDocUpdate = (docSnap: any) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             if (typeof data.subscribers === 'number') {
-              setSubscribersCount(data.subscribers);
+              const liveCount = Math.max(0, data.subscribers);
+              setSubscribersCount(liveCount);
               try {
                 const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
-                counts[listenTargetId] = data.subscribers;
-                if (video.channelId) counts[video.channelId] = data.subscribers;
-                if (video.channelName) counts[video.channelName.trim()] = data.subscribers;
+                counts[listenTargetId] = liveCount;
+                if (video.channelId) counts[video.channelId] = liveCount;
+                if (video.channelName) counts[video.channelName.trim()] = liveCount;
                 localStorage.setItem('bt_channel_sub_counts', JSON.stringify(counts));
               } catch (_) {}
             }
           }
-        }, () => {});
+        };
+
+        unsubscribeChannel = onSnapshot(doc(db, 'channels', listenTargetId), handleDocUpdate, () => {});
+        unsubscribeChannelSub = onSnapshot(doc(db, 'channel_submissions', listenTargetId), handleDocUpdate, () => {});
 
         if (video.channelId && video.channelId !== listenTargetId) {
-          unsubscribeChannel2 = onSnapshot(doc(db, 'channels', video.channelId), (docSnap) => {
-            if (docSnap.exists()) {
-              const data = docSnap.data();
-              if (typeof data.subscribers === 'number' && data.subscribers > 0) {
-                setSubscribersCount(data.subscribers);
-              }
-            }
-          }, () => {});
+          unsubscribeChannel2 = onSnapshot(doc(db, 'channels', video.channelId), handleDocUpdate, () => {});
         }
       } catch (_) {}
     }
@@ -935,6 +937,8 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
 
     return () => {
       if (unsubscribeChannel) unsubscribeChannel();
+      if (unsubscribeChannelSub) unsubscribeChannelSub();
+      if (unsubscribeChannel2) unsubscribeChannel2();
       if (unsubscribeComments) unsubscribeComments();
     };
   }, [video.id, currentUser?.id]);
@@ -1271,7 +1275,7 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
     }
 
     // 3. Persist to Firestore
-    recordSubscription(effectiveChannelId, video.channelName, nextSub, effectiveUser, video.channelId);
+    recordSubscription(effectiveChannelId, video.channelName, nextSub, effectiveUser, video.channelId, nextCount);
   };
 
   const handleAddComment = (e: React.FormEvent) => {
@@ -2383,9 +2387,6 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                             alt={item.title}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
-                          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white">
-                            {item.duration}
-                          </span>
                         </div>
 
                         {/* Details */}
@@ -2442,9 +2443,6 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                         alt={item.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
-                      <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white">
-                        {item.duration}
-                      </span>
                     </div>
 
                     {/* Details */}

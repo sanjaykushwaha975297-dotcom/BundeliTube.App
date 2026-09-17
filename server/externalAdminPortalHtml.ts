@@ -99,9 +99,10 @@ export function getExternalAdminPortalHtml(host: string): string {
       <button class="tab-btn" onclick="switchTab('applications')">📋 2. लंबित चैनल व पैन सत्यापन (Pending KYC)</button>
       <button class="tab-btn" onclick="switchTab('partners')">👑 3. पार्टनर प्रोग्राम चैनल्स (BPP Channels)</button>
       <button class="tab-btn" onclick="switchTab('users')">👥 4. साधारण दर्शक (Normal Users)</button>
-      <button class="tab-btn" onclick="switchTab('withdrawal')">🔒 5. विड्रॉल विंडो (1 से 5 तारीख)</button>
+      <button class="tab-btn" onclick="switchTab('withdrawal')">💳 5. विड्रॉल अनुरोध व बैंक खाते (Withdrawal Requests)</button>
       <button class="tab-btn" onclick="switchTab('history')">📜 6. वितरण इतिहास (History)</button>
-      <button class="tab-btn" onclick="switchTab('api-code')">💻 7. आपकी वेबसाइट का कोड (API / Code)</button>
+      <button class="tab-btn" onclick="switchTab('admob-status')">📱 7. AdMob आईडी व स्थिति (AdMob Setup)</button>
+      <button class="tab-btn" onclick="switchTab('api-code')">💻 8. आपकी वेबसाइट का कोड (API / Code)</button>
     </div>
 
     <!-- TAB 1: DISTRIBUTE -->
@@ -190,9 +191,9 @@ export function getExternalAdminPortalHtml(host: string): string {
       </div>
     </div>
 
-    <!-- TAB 2: WITHDRAWAL WINDOW -->
+    <!-- TAB 2: WITHDRAWAL WINDOW & REQUESTS -->
     <div id="tab-withdrawal" class="tab-content">
-      <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="card" style="max-width: 650px; margin: 0 auto 24px auto;">
         <h2>🔒 विड्रॉल विंडो कंट्रोल (1 से 5 तारीख)</h2>
         <p style="color:#94a3b8; font-size:14px; margin-bottom:20px;">
           क्रिएटर्स केवल 1 से 5 तारीख के बीच ही विड्रॉल कर सकते हैं। एडमिन अपनी अलग वेबसाइट से इस विंडो को जब चाहे चालू या बंद कर सकता है।
@@ -214,6 +215,42 @@ export function getExternalAdminPortalHtml(host: string): string {
         <div style="display:flex; gap:12px;">
           <button class="btn btn-green" style="flex:1;" onclick="setWithdrawalStatus(true)">🔓 विंडो खोलें (Unlock)</button>
           <button class="btn btn-red" style="flex:1;" onclick="setWithdrawalStatus(false)">🔒 विंडो बंद करें (Lock)</button>
+        </div>
+      </div>
+
+      <!-- WITHDRAWAL REQUESTS WITH UNMASKED BANK DETAILS -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h2>💳 सभी विड्रॉल अनुरोध व बैंक खाते (Withdrawal Requests)</h2>
+            <p style="color:#94a3b8; font-size:13px; margin:4px 0 0 0;">
+              क्रिएटर द्वारा चैनल बनाते समय दर्ज किया गया बैंक खाता, IFSC कोड व UPI आईडी। <strong style="color:#34d399;">एडमिन के टिक मार्क (Complete) करने पर वॉलेट से काटी गई राशि क्रिएटर के खाते में वापस नहीं जुड़ेगी!</strong>
+            </p>
+          </div>
+          <button class="btn btn-blue" onclick="loadWithdrawalRequests()" style="padding:8px 16px; font-size:13px;">🔄 रीफ्रेश अनुरोध</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>क्रिएटर / चैनल</th>
+                <th>विड्रॉल राशि</th>
+                <th>बैंक का नाम</th>
+                <th>खाता संख्या (A/C No.)</th>
+                <th>IFSC कोड</th>
+                <th>खाताधारक / PAN नाम</th>
+                <th>UPI ID</th>
+                <th>मोबाइल</th>
+                <th>तारीख</th>
+                <th>स्थिति (Status)</th>
+                <th>कार्यवाही (Action)</th>
+              </tr>
+            </thead>
+            <tbody id="withdrawalRequestsTableBody">
+              <tr><td colspan="11" style="text-align:center; padding:20px;">विड्रॉल अनुरोध लोड हो रहे हैं...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -238,6 +275,56 @@ export function getExternalAdminPortalHtml(host: string): string {
               <tr><td colspan="6" style="text-align:center;">इतिहास लोड हो रहा है...</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: ADMOB STATUS & IDS -->
+    <div id="tab-admob-status" class="tab-content">
+      <div class="card" style="max-width:850px; margin:0 auto;">
+        <h2>📱 आपकी Google AdMob आईडी व विज्ञापनों की स्थिति</h2>
+        <p style="color:#94a3b8; font-size:14px; margin-bottom:20px;">
+          आपके ऐप में <strong style="color:#34d399;">आपकी असली (Real) AdMob IDs</strong> ही कॉन्फ़िगर हैं। डेमो IDs <code style="color:#38bdf8;">ca-app-pub-3940256099942544/...</code> होती हैं, जबकि आपकी असली आईडी <code style="color:#34d399;">pub-5666532653138550</code> है।
+        </p>
+
+        <div style="background:#0f172a; border:1px solid #334155; border-radius:12px; padding:18px; margin-bottom:20px;">
+          <h3 style="margin-top:0; color:#38bdf8; font-size:16px;">🔑 ऐप में लगी असली AdMob आईडी (Real AdMob Unit IDs)</h3>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px; margin-top:12px;">
+            <div style="background:#1e293b; padding:10px 14px; border-radius:8px;">
+              <span style="color:#94a3b8;">Publisher ID:</span><br>
+              <strong style="color:#34d399; font-family:monospace;">pub-5666532653138550</strong>
+            </div>
+            <div style="background:#1e293b; padding:10px 14px; border-radius:8px;">
+              <span style="color:#94a3b8;">AdMob App ID:</span><br>
+              <strong style="color:#38bdf8; font-family:monospace;">ca-app-pub-5666532653138550~5941128324</strong>
+            </div>
+            <div style="background:#1e293b; padding:10px 14px; border-radius:8px;">
+              <span style="color:#94a3b8;">Banner Ad Unit ID:</span><br>
+              <strong style="font-family:monospace; color:#f8fafc;">ca-app-pub-5666532653138550/9305658265</strong>
+            </div>
+            <div style="background:#1e293b; padding:10px 14px; border-radius:8px;">
+              <span style="color:#94a3b8;">Interstitial Ad Unit ID:</span><br>
+              <strong style="font-family:monospace; color:#f8fafc;">ca-app-pub-5666532653138550/9245948510</strong>
+            </div>
+            <div style="background:#1e293b; padding:10px 14px; border-radius:8px;">
+              <span style="color:#94a3b8;">Rewarded Video Ad Unit ID:</span><br>
+              <strong style="font-family:monospace; color:#f8fafc;">ca-app-pub-5666532653138550/1962304537</strong>
+            </div>
+            <div style="background:#1e293b; padding:10px 14px; border-radius:8px;">
+              <span style="color:#94a3b8;">Native Advanced Unit ID:</span><br>
+              <strong style="font-family:monospace; color:#f8fafc;">ca-app-pub-5666532653138550/1582894537</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:#0f172a; border:1px solid #334155; border-radius:12px; padding:18px; margin-bottom:20px;">
+          <h3 style="margin-top:0; color:#fbbf24; font-size:16px;">⚠️ AdMob अप्रूव होने के बाद भी असली Ads न दिखने के 4 मुख्य कारण:</h3>
+          <ul style="color:#cbd5e1; font-size:13px; line-height:1.7; padding-left:20px; margin:10px 0 0 0;">
+            <li><strong>1. Ad Serving Limit (विज्ञापनों की अस्थायी सीमा):</strong> जब नया AdMob खाता अप्रूव होता है, Google पहले 24 से 72 घंटे तक या जब तक असली ऑर्गेनिक यूज़र्स नहीं आते, तब तक विज्ञापनों को सीमित (Limit) रखता है ताकि कोई फ्रॉड क्लिक न हो।</li>
+            <li><strong>2. app-ads.txt सत्यापन:</strong> Google बॉट द्वारा आपकी वेबसाइट पर <code>/app-ads.txt</code> को क्रॉल करने में 24-48 घंटे लगते हैं। हमने आपके डोमेन पर <a href="/app-ads.txt" target="_blank" style="color:#38bdf8;">/app-ads.txt</a> सक्रिय कर दिया है।</li>
+            <li><strong>3. Google AdMob Android SDK:</strong> AdMob मूल रूप से Android APK (Native) में चलता है। जब आप Android APK को फोन में इंस्टॉल करके वास्तविक दर्शकों को देते हैं, तब AdMob SDK असली विज्ञापनों का अनुरोध करता है।</li>
+            <li><strong>4. मैच रेट / Fill Rate:</strong> भारत में ग्रामीण क्षेत्रों के लिए AdMob का फिल रेट 60-80% होता है। जब तक कोई Ad उपलब्ध नहीं होता, तब तक ऐप बैकअप स्पॉन्सर विज्ञापन दिखाता है ताकि स्क्रीन खाली न रहे।</li>
+          </ul>
         </div>
       </div>
     </div>
@@ -523,6 +610,7 @@ async function approveChannel(channelId) {
       event.target.classList.add('active');
       document.getElementById('tab-' + tabId).classList.add('active');
       if (tabId === 'history') loadHistory();
+      if (tabId === 'withdrawal') loadWithdrawalRequests();
       if (tabId === 'applications' || tabId === 'partners' || tabId === 'users') loadApplicationsAndUsers();
     }
 
@@ -926,8 +1014,124 @@ async function approveChannel(channelId) {
       alert('कोड क्लिपबोर्ड पर कॉपी हो गया!');
     }
 
+    async function loadWithdrawalRequests() {
+      const tbody = document.getElementById('withdrawalRequestsTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:20px;">विड्रॉल अनुरोध लोड हो रहे हैं...</td></tr>';
+      try {
+        const res = await fetch('/api/external-admin/withdrawal-requests');
+        const data = await res.json();
+        if (!data.success) {
+          tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:#f87171;">त्रुटि: अनुरोध लोड नहीं हुए</td></tr>';
+          return;
+        }
+
+        const requests = data.requests || [];
+        if (requests.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:#94a3b8; padding:24px;">कोई लंबित विड्रॉल अनुरोध नहीं मिला।</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        requests.forEach(r => {
+          const tr = document.createElement('tr');
+          const isPending = r.status === 'pending';
+          const isCompleted = r.status === 'completed';
+
+          const statusBadge = isPending 
+            ? '<span class="badge badge-yellow">लंबित (Pending)</span>'
+            : isCompleted
+            ? '<span class="badge badge-green">✓ पूर्ण (Completed)</span>'
+            : '<span class="badge badge-red">✕ अस्वीकृत (Rejected)</span>';
+
+          const safeId = (r.id || '').replace(/'/g, "\\'");
+          const safeName = (r.creatorName || r.accountHolder || 'क्रिएटर').replace(/'/g, "\\'");
+          const safeAmount = Number(r.amount || 0);
+
+          const actions = isPending ? \`
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-green" style="padding:6px 10px; font-size:12px;" onclick="completeWithdrawal('\${safeId}', '\${safeName}', \${safeAmount})">✅ पूर्ण करें (टिक मार्क)</button>
+              <button class="btn btn-red" style="padding:6px 10px; font-size:12px;" onclick="rejectWithdrawal('\${safeId}', '\${safeName}', \${safeAmount})">❌ अस्वीकार</button>
+            </div>
+          \` : (isCompleted ? \`<span style="color:#34d399; font-size:12px; font-weight:600;">✓ भुगतान पूर्ण<br><small style="color:#94a3b8;">\${r.transactionUtr || ''}</small></span>\` : \`<span style="color:#f87171; font-size:12px;">अस्वीकृत (रिफंडेड)</span>\`);
+
+          tr.innerHTML = \`
+            <td>
+              <div style="font-weight:700; color:#f8fafc;">\${r.creatorName || 'क्रिएटर'}</div>
+              <div style="font-size:11px; color:#94a3b8;">चैनल: \${r.channelName || r.creatorUid || 'N/A'}</div>
+            </td>
+            <td style="font-weight:800; color:#34d399; font-size:15px;">₹\${safeAmount.toLocaleString('en-IN')}</td>
+            <td style="font-weight:600; color:#e2e8f0;">\${r.bankName || 'N/A'}</td>
+            <td style="font-family:monospace; color:#38bdf8; font-weight:700; font-size:13px; letter-spacing:0.5px;">\${r.accountNumber || r.targetAccount || 'N/A'}</td>
+            <td style="font-family:monospace; color:#fbbf24; font-weight:700;">\${r.ifscCode || 'N/A'}</td>
+            <td>
+              <div style="font-weight:600; color:#f8fafc;">\${r.accountHolder || r.creatorName || 'N/A'}</div>
+              \${r.panNumber ? \`<div style="font-size:11px; color:#94a3b8;">PAN: \${r.panNumber}</div>\` : ''}
+            </td>
+            <td style="font-family:monospace; color:#a78bfa; font-size:12px;">\${r.upiId || 'N/A'}</td>
+            <td style="font-size:12px; color:#94a3b8;">📱 \${r.mobileNumber || 'N/A'}</td>
+            <td style="font-size:12px; color:#94a3b8;">\${new Date(r.createdAt).toLocaleDateString('hi-IN')}</td>
+            <td>\${statusBadge}</td>
+            <td>\${actions}</td>
+          \`;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:#f87171;">सर्वर से अनुरोध लोड करने में त्रुटि: ' + err.message + '</td></tr>';
+      }
+    }
+
+    async function completeWithdrawal(requestId, creatorName, amount) {
+      const utr = prompt(\`क्रिएटर "\${creatorName}" के बैंक खाते में ₹\${amount.toLocaleString('en-IN')} ट्रांसफर करने के बाद बैंक का UTR / Transaction No दर्ज करें:\`, 'UTR-' + Date.now().toString().slice(-8));
+      if (!utr) return;
+
+      try {
+        const res = await fetch('/api/external-admin/complete-withdrawal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestId,
+            transactionUtr: utr,
+            adminNote: 'एडमिन द्वारा भुगतान पूर्ण'
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert(data.message || \`विड्रॉल अनुरोध (₹\${amount}) पूर्ण हो गया! वॉलेट से राशि सफलतापूर्वक कटी हुई है।\`, true);
+          loadWithdrawalRequests();
+        } else {
+          showAlert('विड्रॉल पूर्ण करने में त्रुटि: ' + (data.error || 'अज्ञात त्रुटि'), false);
+        }
+      } catch (err) {
+        showAlert('त्रुटि: ' + err.message, false);
+      }
+    }
+
+    async function rejectWithdrawal(requestId, creatorName, amount) {
+      const reason = prompt(\`क्रिएटर "\${creatorName}" के ₹\${amount.toLocaleString('en-IN')} विड्रॉल को अस्वीकार करने का कारण दर्ज करें (यह राशि क्रिएटर के वॉलेट में रिफंड हो जाएगी):\`, 'बैंक खाता संख्या अथवा IFSC कोड में विसंगति के कारण अस्वीकृत');
+      if (!reason) return;
+
+      try {
+        const res = await fetch('/api/external-admin/reject-withdrawal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId, reason })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert(data.message || 'विड्रॉल अनुरोध अस्वीकार कर दिया गया और राशि क्रिएटर के वॉलेट में वापस जोड़ दी गई।', true);
+          loadWithdrawalRequests();
+        } else {
+          showAlert('अस्वीकृति विफल: ' + (data.error || 'अज्ञात त्रुटि'), false);
+        }
+      } catch (err) {
+        showAlert('त्रुटि: ' + err.message, false);
+      }
+    }
+
     // Initial load
     loadCreators();
+    loadWithdrawalRequests();
   </script>
 </body>
 </html>`;

@@ -413,42 +413,81 @@ export function normalizeChannelId(channelId?: string, channelName?: string): st
 }
 
 /**
- * Checks whether a user has already subscribed to a channel (with local cache fallback)
+ * Checks whether a user has already subscribed to a channel (with local cache + Firestore fallback)
  */
 export async function checkUserSubscribedChannel(
   channelId: string, 
-  channelName?: string, 
+  channelNameOrUserId?: string, 
   userId?: string | null
 ): Promise<boolean> {
-  const normId = normalizeChannelId(channelId, channelName);
+  let effectiveChannelName = '';
+  let effectiveUserId = (userId && userId !== 'guest') ? userId.trim() : '';
+
+  // Support flexible signatures: (channelId, userId) OR (channelId, channelName, userId)
+  if (!effectiveUserId && channelNameOrUserId) {
+    const candidate = channelNameOrUserId.trim();
+    if (candidate.startsWith('viewer_') || candidate.startsWith('sub-') || (candidate.length >= 20 && !candidate.includes(' '))) {
+      effectiveUserId = candidate;
+    } else {
+      effectiveChannelName = candidate;
+    }
+  } else if (channelNameOrUserId) {
+    effectiveChannelName = channelNameOrUserId.trim();
+  }
+
+  // Fallback to local guest viewer ID if not logged in
+  if (!effectiveUserId && typeof window !== 'undefined') {
+    try {
+      effectiveUserId = localStorage.getItem('bt_guest_viewer_id') || '';
+    } catch (_) {}
+  }
+
+  const normId = normalizeChannelId(channelId, effectiveChannelName);
+
+  // 1. Fast check from local storage cache
   try {
     const saved = JSON.parse(localStorage.getItem('bt_subscribed_channels') || '{}');
-    if (saved[normId] === true || (channelId && saved[channelId] === true) || (channelName && saved[channelName.trim()] === true)) {
+    if (
+      saved[normId] === true || 
+      (channelId && saved[channelId] === true) || 
+      (effectiveChannelName && saved[effectiveChannelName] === true)
+    ) {
       return true;
     }
   } catch (_) {}
 
-  if (!userId || userId === 'guest') return false;
+  // If no user ID available, return false after local cache check
+  if (!effectiveUserId || effectiveUserId === 'guest') return false;
 
+  // 2. Authoritative check from Firestore
   try {
     const db = getFirestoreSafe();
-    const subDocId = `${userId}_${normId}`;
-    const subDoc = await getDoc(doc(db, 'channel_subscribers', subDocId));
-    if (subDoc.exists()) {
-      try {
-        const saved = JSON.parse(localStorage.getItem('bt_subscribed_channels') || '{}');
-        saved[normId] = true;
-        if (channelName) saved[channelName.trim()] = true;
-        localStorage.setItem('bt_subscribed_channels', JSON.stringify(saved));
-      } catch (_) {}
-      return true;
+    const docIdsToCheck = [
+      `${effectiveUserId}_${normId}`,
+      channelId ? `${effectiveUserId}_${channelId}` : ''
+    ].filter(Boolean);
+
+    for (const subDocId of docIdsToCheck) {
+      const subDoc = await getDoc(doc(db, 'channel_subscribers', subDocId));
+      if (subDoc.exists()) {
+        try {
+          const saved = JSON.parse(localStorage.getItem('bt_subscribed_channels') || '{}');
+          saved[normId] = true;
+          if (channelId) saved[channelId] = true;
+          if (effectiveChannelName) saved[effectiveChannelName] = true;
+          localStorage.setItem('bt_subscribed_channels', JSON.stringify(saved));
+        } catch (_) {}
+        return true;
+      }
     }
-    const legacySubDoc = await getDoc(doc(db, 'subscriptions', `sub-${userId}-${normId}`));
+
+    const legacySubDoc = await getDoc(doc(db, 'subscriptions', `sub-${effectiveUserId}-${normId}`));
     if (legacySubDoc.exists()) {
       try {
         const saved = JSON.parse(localStorage.getItem('bt_subscribed_channels') || '{}');
         saved[normId] = true;
-        if (channelName) saved[channelName.trim()] = true;
+        if (channelId) saved[channelId] = true;
+        if (effectiveChannelName) saved[effectiveChannelName] = true;
         localStorage.setItem('bt_subscribed_channels', JSON.stringify(saved));
       } catch (_) {}
       return true;
@@ -458,6 +497,77 @@ export async function checkUserSubscribedChannel(
     console.warn('checkUserSubscribedChannel note:', err);
     return false;
   }
+}
+
+/**
+ * Reads the authoritative live subscriber count for a channel from Firestore (with local cache fallback)
+ */
+export async function getChannelLiveSubscribers(
+  channelId: string,
+  channelName?: string
+): Promise<number> {
+  const normId = normalizeChannelId(channelId, channelName);
+  let liveCount: number | null = null;
+
+  try {
+    const db = getFirestoreSafe();
+    
+    // Check channel_submissions first (where channels are submitted & approved)
+    if (channelId) {
+      const subDoc = await getDoc(doc(db, 'channel_submissions', channelId));
+      if (subDoc.exists()) {
+        const data = subDoc.data();
+        if (typeof data.subscribers === 'number') {
+          liveCount = Math.max(0, data.subscribers);
+        }
+      }
+    }
+
+    // Next check channels collection
+    if (liveCount === null && channelId) {
+      const chDoc = await getDoc(doc(db, 'channels', channelId));
+      if (chDoc.exists()) {
+        const data = chDoc.data();
+        if (typeof data.subscribers === 'number') {
+          liveCount = Math.max(0, data.subscribers);
+        }
+      }
+    }
+
+    if (liveCount === null && normId) {
+      const chDoc = await getDoc(doc(db, 'channels', normId));
+      if (chDoc.exists()) {
+        const data = chDoc.data();
+        if (typeof data.subscribers === 'number') {
+          liveCount = Math.max(0, data.subscribers);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('getChannelLiveSubscribers error:', err);
+  }
+
+  // If liveCount was found in Firestore, cache it
+  if (typeof liveCount === 'number') {
+    try {
+      const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      counts[normId] = liveCount;
+      if (channelId) counts[channelId] = liveCount;
+      if (channelName) counts[channelName.trim()] = liveCount;
+      localStorage.setItem('bt_channel_sub_counts', JSON.stringify(counts));
+    } catch (_) {}
+    return liveCount;
+  }
+
+  // Fallback to local storage
+  try {
+    const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+    if (channelId && typeof counts[channelId] === 'number') return Math.max(0, counts[channelId]);
+    if (typeof counts[normId] === 'number') return Math.max(0, counts[normId]);
+    if (channelName && typeof counts[channelName.trim()] === 'number') return Math.max(0, counts[channelName.trim()]);
+  } catch (_) {}
+
+  return 0;
 }
 
 /**
@@ -717,7 +827,8 @@ export async function recordSubscription(
   channelName: string,
   isSubscribed: boolean,
   user?: { id?: string; name?: string; email?: string; avatar?: string } | null,
-  legacyChannelId?: string
+  legacyChannelId?: string,
+  explicitCount?: number
 ): Promise<{ success: boolean; isSubscribed: boolean; subscribersCount?: number; error?: string }> {
   // Resolve effective user ID (with persistent local viewer fallback so viewer subscriptions always work)
   let effectiveUid = user?.id && user.id !== 'guest' ? user.id.trim() : '';
@@ -737,11 +848,14 @@ export async function recordSubscription(
   }
 
   const normChannelId = normalizeChannelId(channelId, channelName);
-  const effectiveLegacyId = (legacyChannelId && legacyChannelId.trim().length > 0) ? legacyChannelId.trim() : (channelId && channelId.trim().length > 0 ? channelId.trim() : normChannelId);
+  const effectiveLegacyId = (legacyChannelId && legacyChannelId.trim().length > 0) 
+    ? legacyChannelId.trim() 
+    : (channelId && channelId.trim().length > 0 ? channelId.trim() : normChannelId);
   const subDocId = `${effectiveUid}_${normChannelId}`;
+  const directSubDocId = channelId && channelId !== normChannelId ? `${effectiveUid}_${channelId}` : '';
   const legacySubDocId = `sub-${effectiveUid}-${normChannelId}`;
 
-  // Instant local storage cache update for both ID and Name
+  // Instant local storage cache update for subscription status
   try {
     const saved = JSON.parse(localStorage.getItem('bt_subscribed_channels') || '{}');
     if (isSubscribed) {
@@ -759,29 +873,35 @@ export async function recordSubscription(
     localStorage.setItem(`bt_subs_${effectiveUid}`, JSON.stringify(saved));
   } catch (_) {}
 
-  // Calculate & update subscriber counts cache (bt_channel_sub_counts & bt_channels_v2)
-  let currentCount = 0;
-  try {
-    const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
-    if (typeof counts[normChannelId] === 'number') currentCount = counts[normChannelId];
-    else if (effectiveLegacyId && typeof counts[effectiveLegacyId] === 'number') currentCount = counts[effectiveLegacyId];
-    else if (channelId && typeof counts[channelId] === 'number') currentCount = counts[channelId];
-    else if (channelName && typeof counts[channelName.trim()] === 'number') currentCount = counts[channelName.trim()];
-    else {
-      // Fallback to bt_channels_v2
-      const savedChannelsStr = localStorage.getItem('bt_channels_v2');
-      if (savedChannelsStr) {
-        const channels = JSON.parse(savedChannelsStr);
-        const ch = channels.find((c: any) => c.id === normChannelId || c.id === channelId || c.name === channelName);
-        if (ch && typeof ch.subscribers === 'number') {
-          currentCount = ch.subscribers;
+  // Calculate & update subscriber counts cache (prevent double count if caller already calculated explicitCount)
+  let updatedSubscribersCount: number;
+  if (typeof explicitCount === 'number' && !isNaN(explicitCount)) {
+    updatedSubscribersCount = Math.max(0, explicitCount);
+  } else {
+    let currentCount = 0;
+    try {
+      const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      if (typeof counts[normChannelId] === 'number') currentCount = counts[normChannelId];
+      else if (effectiveLegacyId && typeof counts[effectiveLegacyId] === 'number') currentCount = counts[effectiveLegacyId];
+      else if (channelId && typeof counts[channelId] === 'number') currentCount = counts[channelId];
+      else if (channelName && typeof counts[channelName.trim()] === 'number') currentCount = counts[channelName.trim()];
+      else {
+        // Fallback to bt_channels_v2
+        const savedChannelsStr = localStorage.getItem('bt_channels_v2');
+        if (savedChannelsStr) {
+          const channels = JSON.parse(savedChannelsStr);
+          const ch = channels.find((c: any) => c.id === normChannelId || c.id === channelId || c.name === channelName);
+          if (ch && typeof ch.subscribers === 'number') {
+            currentCount = ch.subscribers;
+          }
         }
       }
-    }
-  } catch (_) {}
+    } catch (_) {}
 
-  const updatedSubscribersCount = Math.max(0, isSubscribed ? currentCount + 1 : Math.max(0, currentCount - 1));
+    updatedSubscribersCount = Math.max(0, isSubscribed ? currentCount + 1 : Math.max(0, currentCount - 1));
+  }
 
+  // Update persistent local caches immediately
   try {
     const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
     counts[normChannelId] = updatedSubscribersCount;
@@ -818,22 +938,30 @@ export async function recordSubscription(
 
   try {
     const db = getFirestoreSafe();
-    const subDocRef = doc(db, 'channel_subscribers', subDocId);
 
     // 1. Update channel document subscribers counter in Firestore
     const channelRef = doc(db, 'channels', normChannelId);
     await setDoc(channelRef, {
-      subscribers: increment(isSubscribed ? 1 : -1),
+      subscribers: updatedSubscribersCount,
       channelName: channelName || '',
       id: normChannelId,
       updatedAt: serverTimestamp(),
       serverTimestamp: serverTimestamp()
     }, { merge: true }).catch(() => {});
 
-    // If legacy/explicit channelId differs from normChannelId, also update that doc
-    if (effectiveLegacyId && effectiveLegacyId !== normChannelId) {
+    // If explicit channelId differs from normChannelId, also update that doc
+    if (channelId && channelId !== normChannelId) {
+      await setDoc(doc(db, 'channels', channelId), {
+        subscribers: updatedSubscribersCount,
+        channelName: channelName || '',
+        id: channelId,
+        updatedAt: serverTimestamp()
+      }, { merge: true }).catch(() => {});
+    }
+
+    if (effectiveLegacyId && effectiveLegacyId !== normChannelId && effectiveLegacyId !== channelId) {
       await setDoc(doc(db, 'channels', effectiveLegacyId), {
-        subscribers: increment(isSubscribed ? 1 : -1),
+        subscribers: updatedSubscribersCount,
         channelName: channelName || '',
         id: effectiveLegacyId,
         updatedAt: serverTimestamp()
@@ -841,14 +969,15 @@ export async function recordSubscription(
     }
 
     // Also update channel_submissions doc if present so admin moderation & creator studio stay in sync
-    const targetSubId = (channelId && (channelId.startsWith('chan-') || channelId.startsWith('sub-'))) 
-      ? channelId 
-      : (effectiveLegacyId && (effectiveLegacyId.startsWith('chan-') || effectiveLegacyId.startsWith('sub-')))
-        ? effectiveLegacyId
-        : normChannelId;
-    if (targetSubId) {
-      await setDoc(doc(db, 'channel_submissions', targetSubId), {
-        subscribers: increment(isSubscribed ? 1 : -1),
+    if (channelId) {
+      await setDoc(doc(db, 'channel_submissions', channelId), {
+        subscribers: updatedSubscribersCount,
+        updatedAt: serverTimestamp()
+      }, { merge: true }).catch(() => {});
+    }
+    if (effectiveLegacyId && effectiveLegacyId !== channelId) {
+      await setDoc(doc(db, 'channel_submissions', effectiveLegacyId), {
+        subscribers: updatedSubscribersCount,
         updatedAt: serverTimestamp()
       }, { merge: true }).catch(() => {});
     }
@@ -859,7 +988,7 @@ export async function recordSubscription(
       const subPayload = cleanFirestoreData({
         id: subDocId,
         subscriberUserId: effectiveUid,
-        creatorChannelId: effectiveLegacyId || normChannelId,
+        creatorChannelId: channelId || normChannelId,
         channelId: normChannelId,
         legacyChannelId: effectiveLegacyId,
         channelName: channelName?.trim() || '',
@@ -872,9 +1001,15 @@ export async function recordSubscription(
       });
 
       await setDoc(doc(db, 'channel_subscribers', subDocId), subPayload).catch(() => {});
+      if (directSubDocId) {
+        await setDoc(doc(db, 'channel_subscribers', directSubDocId), subPayload).catch(() => {});
+      }
       await setDoc(doc(db, 'subscriptions', legacySubDocId), subPayload).catch(() => {});
     } else {
       await deleteDoc(doc(db, 'channel_subscribers', subDocId)).catch(() => {});
+      if (directSubDocId) {
+        await deleteDoc(doc(db, 'channel_subscribers', directSubDocId)).catch(() => {});
+      }
       await deleteDoc(doc(db, 'subscriptions', legacySubDocId)).catch(() => {});
     }
 

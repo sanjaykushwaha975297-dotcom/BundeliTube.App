@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   IndianRupee, 
@@ -9,8 +9,6 @@ import {
   AlertCircle, 
   CheckCircle2, 
   Lock, 
-  Unlock,
-  ShieldAlert,
   CreditCard, 
   Building2, 
   Smartphone, 
@@ -21,7 +19,20 @@ import {
 } from 'lucide-react';
 import { CreatorWallet, Channel, UserAccount, RemoteAppConfig } from '../types';
 import { Language, translations } from '../locales/i18n';
-import { getFirestoreSafe, addDoc, collection, doc, setDoc, serverTimestamp, cleanFirestoreData, syncWithdrawalLockToFirebase } from '../lib/firebase';
+import { 
+  getFirestoreSafe, 
+  addDoc, 
+  collection, 
+  doc, 
+  getDoc,
+  getDocs,
+  query,
+  where,
+  limit,
+  setDoc, 
+  serverTimestamp, 
+  cleanFirestoreData
+} from '../lib/firebase';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -50,19 +61,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 }) => {
   const t = translations[language];
 
-  // Admin detection
-  const isAdmin = 
-    currentUser.role === 'admin' || 
-    currentUser.email === 'bundelitubeapp@gmail.com' ||
-    currentUser.email === 'bundelitubeapp.@gmail.com' ||
-    currentUser.email === 'admin@bundelitube.com';
-
-  // ✅ एडमिन पैनल के रिमोट स्विच का सीधा पालन करें (रिमोट स्विच ही अंतिम निर्णय लेता है, स्थानीय तारीख से लॉक नहीं होगा):
-  // User requirement:
+  // ✅ रिमोट स्विच का सीधा पालन करें (रिमोट स्विच ही अंतिम निर्णय लेता है, स्थानीय तारीख से लॉक नहीं होगा):
   // bool isUnlocked = config['isWithdrawalWindowUnlocked'] == true || 
   //                   config['withdrawalPageLocked'] == false;
   const isUnlocked = remoteConfig?.isWithdrawalWindowUnlocked === true || remoteConfig?.withdrawalPageLocked === false;
-  const isUnlockedByAdmin = isUnlocked;
   const isWindowActive = isUnlocked;
 
   const minLimit = remoteConfig?.withdrawalMinAmount || wallet.minWithdrawalLimit || 5000;
@@ -76,56 +78,192 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [requestSuccess, setRequestSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
-  // Admin lock toggling state
-  const [isTogglingLock, setIsTogglingLock] = useState(false);
-  const [adminStatusMsg, setAdminStatusMsg] = useState('');
+  // ✅ Live verified bank details from channel submission / channels in Firestore
+  const [bankInfo, setBankInfo] = useState<{
+    accountNumber: string;
+    bankName: string;
+    ifscCode: string;
+    accountHolder: string;
+    branchName: string;
+    upiId: string;
+    mobileNumber: string;
+    panNumber: string;
+    panCardHolderName: string;
+  }>(() => {
+    const b = channel.bankDetails || ({} as any);
+    let cachedSub: any = {};
+    try {
+      if (currentUser.id) {
+        const savedBank = JSON.parse(localStorage.getItem(`bt_bank_details_${currentUser.id}`) || 'null');
+        if (savedBank && (savedBank.accountNumber || savedBank.upiId)) {
+          cachedSub = { ...savedBank };
+        }
+      }
+      if (!cachedSub.accountNumber) {
+        const genericBank = JSON.parse(localStorage.getItem('bt_bank_details') || 'null');
+        if (genericBank && (genericBank.accountNumber || genericBank.upiId)) {
+          cachedSub = { ...cachedSub, ...genericBank };
+        }
+      }
+      const subs = JSON.parse(localStorage.getItem('bt_channel_submissions') || '[]');
+      if (Array.isArray(subs) && subs.length > 0) {
+        const found = subs.find((s: any) => s.ownerUid === currentUser.id || s.id === channel.id || s.channelName === channel.name);
+        if (found) cachedSub = { ...found, ...cachedSub };
+      }
+      if (!cachedSub.accountNumber) {
+        const ch = JSON.parse(localStorage.getItem('bt_channel') || '{}');
+        if (ch.bankDetails) cachedSub = { ...cachedSub, ...ch.bankDetails };
+      }
+    } catch (_) {}
+
+    return {
+      accountNumber: b.accountNumber || cachedSub.accountNumber || '',
+      bankName: b.bankName || cachedSub.bankName || '',
+      ifscCode: b.ifscCode || cachedSub.ifscCode || '',
+      accountHolder: b.accountHolder || cachedSub.accountHolder || cachedSub.panCardHolderName || currentUser.name || '',
+      branchName: b.branchName || cachedSub.branchName || '',
+      upiId: b.upiId || cachedSub.upiId || '',
+      mobileNumber: cachedSub.mobileNumber || channel.mobileNumber || currentUser.phone || '',
+      panNumber: cachedSub.panNumber || channel.panNumber || '',
+      panCardHolderName: cachedSub.panCardHolderName || channel.panCardHolderName || ''
+    };
+  });
+
+  // Fetch verified channel bank details directly from Firestore on open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let isMounted = true;
+    const fetchLatestBankDetails = async () => {
+      try {
+        const db = getFirestoreSafe();
+        let subData: any = null;
+
+        // 1. Check channel_submissions by channel.id
+        if (channel.id) {
+          const subDoc = await getDoc(doc(db, 'channel_submissions', channel.id)).catch(() => null);
+          if (subDoc?.exists()) {
+            subData = subDoc.data();
+          }
+        }
+
+        // 2. Check channel_submissions by ownerUid
+        if (!subData && currentUser.id) {
+          const q = query(
+            collection(db, 'channel_submissions'),
+            where('ownerUid', '==', currentUser.id),
+            limit(1)
+          );
+          const snap = await getDocs(q).catch(() => null);
+          if (snap && !snap.empty) {
+            subData = snap.docs[0].data();
+          }
+        }
+
+        // 3. Check channels collection
+        let chanData: any = null;
+        if (channel.id) {
+          const cDoc = await getDoc(doc(db, 'channels', channel.id)).catch(() => null);
+          if (cDoc?.exists()) {
+            chanData = cDoc.data();
+          }
+        }
+
+        // 4. Check users collection
+        let userData: any = null;
+        if (currentUser.id && currentUser.id !== 'user') {
+          const uDoc = await getDoc(doc(db, 'users', currentUser.id)).catch(() => null);
+          if (uDoc?.exists()) {
+            userData = uDoc.data();
+          }
+        }
+
+        if (!isMounted) return;
+
+        setBankInfo(prev => {
+          const mergedAcc = 
+            subData?.accountNumber || 
+            subData?.bankDetails?.accountNumber || 
+            chanData?.bankDetails?.accountNumber || 
+            chanData?.accountNumber || 
+            userData?.bankDetails?.accountNumber || 
+            userData?.accountNumber || 
+            prev.accountNumber;
+
+          const mergedBank = 
+            subData?.bankName || 
+            subData?.bankDetails?.bankName || 
+            chanData?.bankDetails?.bankName || 
+            chanData?.bankName || 
+            userData?.bankDetails?.bankName || 
+            userData?.bankName || 
+            prev.bankName;
+
+          const mergedIfsc = 
+            subData?.ifscCode || 
+            subData?.bankDetails?.ifscCode || 
+            chanData?.bankDetails?.ifscCode || 
+            chanData?.ifscCode || 
+            userData?.bankDetails?.ifscCode || 
+            userData?.ifscCode || 
+            prev.ifscCode;
+
+          const mergedHolder = 
+            subData?.accountHolder || 
+            subData?.panCardHolderName || 
+            subData?.bankDetails?.accountHolder || 
+            chanData?.bankDetails?.accountHolder || 
+            chanData?.accountHolder || 
+            userData?.bankDetails?.accountHolder || 
+            prev.accountHolder;
+
+          const mergedBranch = 
+            subData?.branchName || 
+            subData?.bankDetails?.branchName || 
+            chanData?.bankDetails?.branchName || 
+            prev.branchName;
+
+          const mergedUpi = 
+            subData?.upiId || 
+            subData?.bankDetails?.upiId || 
+            chanData?.bankDetails?.upiId || 
+            chanData?.upiId || 
+            userData?.bankDetails?.upiId || 
+            userData?.upiId || 
+            prev.upiId;
+
+          const mergedMobile = subData?.mobileNumber || chanData?.mobileNumber || userData?.mobileNumber || prev.mobileNumber;
+          const mergedPan = subData?.panNumber || chanData?.panNumber || userData?.panNumber || prev.panNumber;
+          const mergedPanName = subData?.panCardHolderName || chanData?.panCardHolderName || prev.panCardHolderName;
+
+          if (mergedUpi && !upiId) {
+            setUpiId(mergedUpi);
+          }
+
+          return {
+            accountNumber: mergedAcc || '',
+            bankName: mergedBank || '',
+            ifscCode: mergedIfsc || '',
+            accountHolder: mergedHolder || '',
+            branchName: mergedBranch || '',
+            upiId: mergedUpi || '',
+            mobileNumber: mergedMobile || '',
+            panNumber: mergedPan || '',
+            panCardHolderName: mergedPanName || ''
+          };
+        });
+      } catch (err) {
+        console.warn('Could not fetch bank details from Firestore:', err);
+      }
+    };
+
+    fetchLatestBankDetails();
+    return () => { isMounted = false; };
+  }, [isOpen, channel.id, currentUser.id]);
+
+  const [isEditingBank, setIsEditingBank] = useState(false);
 
   if (!isOpen) return null;
-
-  const handleToggleAdminLock = async (forceUnlock?: boolean) => {
-    setIsTogglingLock(true);
-    setAdminStatusMsg('');
-    const nextState = forceUnlock !== undefined ? forceUnlock : !isUnlocked;
-    const isLocked = !nextState;
-    try {
-      const lockPayload: Partial<RemoteAppConfig> = {
-        isWithdrawalWindowUnlocked: nextState,
-        withdrawalPageLocked: isLocked,
-        withdrawalWindowStartDay: 1,
-        withdrawalWindowEndDay: 6,
-        withdrawalWindowDatesText: remoteConfig?.withdrawalWindowDatesText || '1 से 6 तारीख',
-        withdrawalLastToggledBy: currentUser.email || currentUser.name || 'Admin',
-        withdrawalLastToggledAt: new Date().toISOString(),
-        withdrawalLockReason: nextState ? 'एडमिन स्विच द्वारा अनलॉक (1 से 6 विंडो)' : 'एडमिन स्विच द्वारा लॉक',
-        withdrawalManualMode: nextState ? 'manual_unlock' : 'manual_lock'
-      };
-
-      if (onUpdateRemoteConfig) {
-        await onUpdateRemoteConfig(lockPayload);
-      }
-
-      // Also sync to all Firebase collections and audit logs
-      await syncWithdrawalLockToFirebase({
-        isUnlocked: nextState,
-        lockedBy: currentUser.name || 'Admin',
-        email: currentUser.email || 'Admin',
-        reason: nextState ? 'एडमिन स्विच द्वारा अनलॉक (1 से 6 विंडो)' : 'एडमिन स्विच द्वारा लॉक',
-        windowDatesText: remoteConfig?.withdrawalWindowDatesText || '1 से 6 तारीख',
-        minAmount: minLimit
-      });
-
-      setAdminStatusMsg(
-        nextState 
-          ? (language === 'hi' ? '✓ निकासी विंडो सफलतापूर्वक अनलॉक (खुल गई)!' : '✓ Withdrawal window unlocked successfully!')
-          : (language === 'hi' ? '✓ निकासी विंडो सफलतापूर्वक लॉक (बंद) कर दी गई!' : '✓ Withdrawal window locked successfully!')
-      );
-      setTimeout(() => setAdminStatusMsg(''), 4000);
-    } catch (err) {
-      console.warn('Failed to update remote config lock status:', err);
-    } finally {
-      setIsTogglingLock(false);
-    }
-  };
 
   const handleWithdrawalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,32 +292,172 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       return;
     }
 
-    const targetAccount = payoutMethod === 'UPI' 
-      ? (upiId.trim() || channel.bankDetails?.upiId || 'UPI Account')
-      : `${channel.bankDetails?.bankName || 'Bank'} A/C ****${channel.bankDetails?.accountNumber?.slice(-4) || 'XXXX'}`;
+    const effectiveAccNum = bankInfo.accountNumber?.trim() || channel.bankDetails?.accountNumber?.trim() || '';
+    const effectiveBankName = bankInfo.bankName?.trim() || channel.bankDetails?.bankName?.trim() || 'Bank Transfer';
+    const effectiveIfsc = bankInfo.ifscCode?.trim() || channel.bankDetails?.ifscCode?.trim() || '';
+    const effectiveHolder = bankInfo.accountHolder?.trim() || channel.bankDetails?.accountHolder?.trim() || currentUser.name || '';
+    const effectiveUpi = upiId.trim() || bankInfo.upiId?.trim() || channel.bankDetails?.upiId?.trim() || '';
+
+    if (payoutMethod === 'Bank Transfer' && (!effectiveAccNum || !effectiveIfsc)) {
+      setErrorMsg(language === 'hi' 
+        ? 'कृपया अपना पूरा बैंक खाता संख्या और IFSC कोड दर्ज करें।' 
+        : 'Please provide full bank account number and IFSC code.');
+      setIsEditingBank(true);
+      return;
+    }
+
+    if (payoutMethod === 'UPI' && !effectiveUpi) {
+      setErrorMsg(language === 'hi' 
+        ? 'कृपया अपनी UPI ID दर्ज करें।' 
+        : 'Please enter a valid UPI ID.');
+      return;
+    }
+
+    const targetAccountFormatted = payoutMethod === 'UPI' 
+      ? effectiveUpi
+      : `${effectiveBankName} - A/C: ${effectiveAccNum} (IFSC: ${effectiveIfsc}, Holder: ${effectiveHolder})`;
 
     setIsSubmitting(true);
 
     try {
       const db = getFirestoreSafe();
+      const nowIso = new Date().toISOString();
+
+      const reqRef = doc(collection(db, 'withdrawal_requests'));
+      const withdrawalRequestId = reqRef.id;
+
+      // ✅ Exact Bank Account & UPI Details submitted during channel creation
       const payoutDoc = cleanFirestoreData({
+        id: withdrawalRequestId,
+        requestId: withdrawalRequestId,
         creatorUid: currentUser.id || 'user',
-        creatorName: currentUser.name || '',
+        creatorName: currentUser.name || effectiveHolder || '',
+        creatorEmail: currentUser.email || '',
+        channelId: channel.id || '',
         channelName: channel.name || '',
         amount: numAmount,
         paymentMethod: payoutMethod,
-        upiId: payoutMethod === 'UPI' ? upiId.trim() : '',
-        targetAccount: targetAccount,
+
+        // Full unmasked bank credentials for Admin transfer
+        accountNumber: effectiveAccNum,
+        bankAccountNumber: effectiveAccNum,
+        bankName: effectiveBankName,
+        ifscCode: effectiveIfsc,
+        accountHolder: effectiveHolder,
+        accountHolderName: effectiveHolder,
+        branchName: bankInfo.branchName || '',
+        upiId: effectiveUpi,
+        mobileNumber: bankInfo.mobileNumber || currentUser.phone || '',
+        phone: bankInfo.mobileNumber || currentUser.phone || '',
+        panNumber: bankInfo.panNumber || channel.panNumber || '',
+        panCardHolderName: bankInfo.panCardHolderName || channel.panCardHolderName || effectiveHolder,
+
+        targetAccount: targetAccountFormatted,
         status: 'pending',
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso,
+        requestedAt: nowIso,
         serverTimestamp: serverTimestamp()
       });
-      await addDoc(collection(db, 'payout_requests'), payoutDoc);
-      await addDoc(collection(db, 'withdrawals'), payoutDoc);
+
+      // 1. Write to `withdrawal_requests` (Primary collection)
+      await setDoc(reqRef, payoutDoc);
+
+      // 2. Also write to `withdrawals` and `payout_requests` for complete compatibility
+      await setDoc(doc(db, 'withdrawals', withdrawalRequestId), payoutDoc, { merge: true }).catch(() => null);
+      await setDoc(doc(db, 'payout_requests', withdrawalRequestId), payoutDoc, { merge: true }).catch(() => null);
+
+      // Save/persist bank details to channel, users and channel_submissions for permanence
+      if (effectiveAccNum || effectiveUpi) {
+        const bankPayload = {
+          accountNumber: effectiveAccNum,
+          bankName: effectiveBankName,
+          ifscCode: effectiveIfsc,
+          accountHolder: effectiveHolder,
+          upiId: effectiveUpi,
+          branchName: bankInfo.branchName || '',
+          mobileNumber: bankInfo.mobileNumber || currentUser.phone || '',
+          panNumber: bankInfo.panNumber || channel.panNumber || ''
+        };
+        if (channel.id) {
+          await setDoc(doc(db, 'channels', channel.id), { bankDetails: bankPayload }, { merge: true }).catch(() => null);
+          await setDoc(doc(db, 'channel_submissions', channel.id), { ...bankPayload, ownerUid: currentUser.id }, { merge: true }).catch(() => null);
+        }
+        if (currentUser.id && currentUser.id !== 'user') {
+          await setDoc(doc(db, 'users', currentUser.id), {
+            bankDetails: bankPayload,
+            accountNumber: effectiveAccNum,
+            ifscCode: effectiveIfsc,
+            bankName: effectiveBankName,
+            accountHolder: effectiveHolder,
+            upiId: effectiveUpi
+          }, { merge: true }).catch(() => null);
+        }
+        try {
+          localStorage.setItem(`bt_bank_details_${currentUser.id}`, JSON.stringify(bankPayload));
+          localStorage.setItem('bt_bank_details', JSON.stringify(bankPayload));
+          const ch = JSON.parse(localStorage.getItem('bt_channel') || '{}');
+          ch.bankDetails = { ...(ch.bankDetails || {}), ...bankPayload };
+          localStorage.setItem('bt_channel', JSON.stringify(ch));
+          localStorage.setItem(`bt_channel_${currentUser.id}`, JSON.stringify(ch));
+        } catch (_) {}
+      }
+
+      // 3. 🛡️ CRITICAL: Deduct balance from Firestore `wallets/{currentUser.id}` IMMEDIATELY
+      // Prevents the money from reverting or adding back upon page refresh / onSnapshot
+      const newBal = Math.max(0, Math.round((wallet.currentBalance - numAmount) * 100) / 100);
+      const newWithdrawn = Math.round(((wallet.totalWithdrawn || 0) + numAmount) * 100) / 100;
+
+      const newTx = {
+        id: `TXN-${Date.now().toString().slice(-6)}`,
+        date: new Date().toLocaleDateString('hi-IN'),
+        amount: numAmount,
+        type: 'withdrawal' as const,
+        status: 'pending' as const,
+        payoutMethod: payoutMethod,
+        targetAccount: targetAccountFormatted,
+        accountNumber: effectiveAccNum,
+        ifscCode: effectiveIfsc,
+        refId: withdrawalRequestId,
+        note: language === 'hi' 
+          ? `${payoutMethod} द्वारा निकासी अनुरोध दर्ज (लंबित)` 
+          : `Withdrawal requested via ${payoutMethod} (Pending)`
+      };
+
+      const updatedTxs = [newTx, ...(wallet.transactions || [])].slice(0, 50);
+
+      const walletRef = doc(db, 'wallets', currentUser.id);
+      await setDoc(walletRef, cleanFirestoreData({
+        currentBalance: newBal,
+        walletBalance: newBal,
+        totalWithdrawn: newWithdrawn,
+        lastWithdrawalAmount: numAmount,
+        lastWithdrawalDate: nowIso,
+        lastWithdrawalStatus: 'pending',
+        lastWithdrawalRequestId: withdrawalRequestId,
+        transactions: updatedTxs,
+        lastUpdated: nowIso,
+        serverTimestamp: serverTimestamp()
+      }), { merge: true }).catch((err) => console.warn('Wallet deduction setDoc warning:', err));
+
+      // 4. Record audit log
+      await addDoc(collection(db, 'withdrawal_lock_logs'), cleanFirestoreData({
+        action: 'withdrawal_requested',
+        creatorUid: currentUser.id,
+        creatorName: currentUser.name,
+        channelName: channel.name,
+        amount: numAmount,
+        payoutMethod,
+        accountNumber: effectiveAccNum,
+        withdrawalRequestId,
+        status: 'pending',
+        timestamp: nowIso,
+        serverTimestamp: serverTimestamp()
+      })).catch(() => null);
+
     } catch (err) {
       console.error('Firestore payout write error:', err);
     } finally {
-      onWithdrawalRequested(numAmount, payoutMethod, targetAccount);
+      onWithdrawalRequested(numAmount, payoutMethod, targetAccountFormatted);
       setIsSubmitting(false);
       setRequestSuccess(true);
     }
@@ -242,92 +520,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </p>
               </div>
             </div>
-
-            {/* Admin Manual Payout Control Panel */}
-            {isAdmin && (
-              <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-purple-500/15 border-2 border-amber-500/40 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-amber-500 shrink-0" />
-                    <div>
-                      <span className="text-xs font-black text-amber-500 uppercase tracking-wider block">
-                        एडमिन पेआउट कंट्रोल (Firebase Manual Control)
-                      </span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Firebase doc: <code>config/app_config.isWithdrawalWindowUnlocked</code>
-                      </span>
-                    </div>
-                  </div>
-
-                  <span className={`text-xs px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-xs ${
-                    isUnlockedByAdmin 
-                      ? 'bg-emerald-500 text-slate-950 animate-pulse' 
-                      : 'bg-rose-500 text-white'
-                  }`}>
-                    {isUnlockedByAdmin ? (
-                      <>
-                        <Unlock className="w-3.5 h-3.5" />
-                        <span>🔓 UNLOCKED (विंडो खुली है)</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>🔒 LOCKED (विंडो बंद है)</span>
-                      </>
-                    )}
-                  </span>
-                </div>
-
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                  {language === 'hi'
-                    ? '💡 एडमिन निर्देश: निकासी विंडो सीधे एडमिन पैनल के रिमोट स्विच (isWithdrawalWindowUnlocked == true || withdrawalPageLocked == false) द्वारा नियंत्रित होती है। 1 से 6 तारीख चक्र के लिए आप यहाँ से या अपनी एडमिन वेबसाइट से कभी भी इसे लॉक या अनलॉक कर सकते हैं।'
-                    : '💡 Admin Notice: The withdrawal window follows the admin remote switch. You can unlock or lock it anytime for the 1st to 6th payout cycle.'}
-                </p>
-
-                {adminStatusMsg && (
-                  <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>{adminStatusMsg}</span>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleAdminLock(!isUnlocked)}
-                    disabled={isTogglingLock}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 ${
-                      isUnlocked
-                        ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20'
-                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
-                    }`}
-                  >
-                    {isTogglingLock ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>अपडेट हो रहा है...</span>
-                      </>
-                    ) : isUnlocked ? (
-                      <>
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>🔒 विंडो तुरंत लॉक करें (Lock Payouts)</span>
-                      </>
-                    ) : (
-                      <>
-                        <Unlock className="w-3.5 h-3.5" />
-                        <span>🔓 विंडो तुरंत अनलॉक करें (Open Payouts)</span>
-                      </>
-                    )}
-                  </button>
-
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {isUnlocked
-                      ? 'वर्तमान स्थिति: क्रिएटर्स के लिए विंडो खुली है (1 से 6 तारीख चक्र)'
-                      : 'वर्तमान स्थिति: क्रिएटर्स के लिए निकासी फॉर्म पूरी तरह लॉक है'}
-                  </span>
-                </div>
-              </div>
-            )}
 
             {/* Financial Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-5">
@@ -514,7 +706,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <option value="Bank Transfer">
-                        {language === 'hi' ? `बैंक ट्रांसफर (${channel.bankDetails?.bankName || 'Verified Bank'})` : 'Bank Transfer'}
+                        {language === 'hi' ? `बैंक ट्रांसफर (${bankInfo.bankName || channel.bankDetails?.bankName || 'Verified Bank'})` : 'Bank Transfer'}
                       </option>
                       <option value="UPI">
                         {language === 'hi' ? 'UPI (Google Pay / PhonePe / Paytm)' : 'UPI Transfer'}
@@ -523,10 +715,119 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </div>
                 </div>
 
+                {/* ✅ Verified Channel Bank Account Details Preview & Edit */}
+                {payoutMethod === 'Bank Transfer' && (
+                  <div className="p-3.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-2 text-xs">
+                    <div className="flex items-center justify-between text-amber-700 dark:text-amber-400 font-bold">
+                      <span className="flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-amber-600" />
+                        {language === 'hi' ? 'चैनल का बैंक खाता विवरण' : 'Channel Bank Account Details'}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {bankInfo.accountNumber && (
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingBank(!isEditingBank)}
+                            className="text-[11px] text-amber-600 dark:text-amber-400 underline font-medium hover:text-amber-500 cursor-pointer"
+                          >
+                            {isEditingBank ? (language === 'hi' ? 'पूर्वावलोकन' : 'Preview') : (language === 'hi' ? '✏️ खाता बदलें' : '✏️ Edit')}
+                          </button>
+                        )}
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full font-mono font-bold">
+                          ✓ VERIFIED
+                        </span>
+                      </div>
+                    </div>
+
+                    {(!bankInfo.accountNumber || isEditingBank) ? (
+                      <div className="space-y-3 pt-2">
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                          {language === 'hi'
+                            ? 'कृपया अपना बैंक खाता संख्या और IFSC कोड सावधानीपूर्वक दर्ज करें। एडमिन इसी खाते में पैसे ट्रांसफर करेगा।'
+                            : 'Please enter your full bank account number and IFSC code for payout transfers.'}
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 font-semibold">{language === 'hi' ? 'खाताधारक का नाम *' : 'Account Holder *'}</label>
+                            <input
+                              type="text"
+                              required
+                              value={bankInfo.accountHolder}
+                              onChange={(e) => setBankInfo(prev => ({ ...prev, accountHolder: e.target.value }))}
+                              placeholder="जैसे: SANJAY KUSHWAHA"
+                              className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 font-semibold">{language === 'hi' ? 'बैंक का नाम *' : 'Bank Name *'}</label>
+                            <input
+                              type="text"
+                              required
+                              value={bankInfo.bankName}
+                              onChange={(e) => setBankInfo(prev => ({ ...prev, bankName: e.target.value }))}
+                              placeholder="जैसे: State Bank of India"
+                              className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 font-semibold">{language === 'hi' ? 'खाता संख्या (A/C Number) *' : 'Account Number *'}</label>
+                            <input
+                              type="text"
+                              required
+                              value={bankInfo.accountNumber}
+                              onChange={(e) => setBankInfo(prev => ({ ...prev, accountNumber: e.target.value.replace(/\s+/g, '') }))}
+                              placeholder="जैसे: 30291083921"
+                              className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono font-bold focus:outline-none focus:border-amber-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 font-semibold">{language === 'hi' ? 'IFSC कोड *' : 'IFSC Code *'}</label>
+                            <input
+                              type="text"
+                              required
+                              value={bankInfo.ifscCode}
+                              onChange={(e) => setBankInfo(prev => ({ ...prev, ifscCode: e.target.value.toUpperCase().replace(/\s+/g, '') }))}
+                              placeholder="जैसे: SBIN0001234"
+                              className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono font-bold uppercase focus:outline-none focus:border-amber-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700 dark:text-slate-300 pt-1">
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">{language === 'hi' ? 'खाताधारक का नाम' : 'Account Holder'}</span>
+                          <span className="font-semibold text-slate-900 dark:text-slate-100">
+                            {bankInfo.accountHolder || channel.bankDetails?.accountHolder || currentUser.name || 'उपलब्ध नहीं'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">{language === 'hi' ? 'बैंक का नाम' : 'Bank Name'}</span>
+                          <span className="font-semibold text-slate-900 dark:text-slate-100">
+                            {bankInfo.bankName || channel.bankDetails?.bankName || 'उपलब्ध नहीं'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">{language === 'hi' ? 'खाता संख्या (A/C Number)' : 'Account Number'}</span>
+                          <span className="font-mono font-bold text-amber-600 dark:text-amber-400 tracking-wider text-sm">
+                            {bankInfo.accountNumber || channel.bankDetails?.accountNumber || 'चैनल में दर्ज नहीं'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">IFSC Code</span>
+                          <span className="font-mono font-bold uppercase text-slate-900 dark:text-slate-100">
+                            {bankInfo.ifscCode || channel.bankDetails?.ifscCode || 'उपलब्ध नहीं'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {payoutMethod === 'UPI' && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                      {language === 'hi' ? 'UPI ID' : 'UPI ID'}
+                      {language === 'hi' ? 'UPI ID (Google Pay / PhonePe / Paytm)' : 'UPI ID'}
                     </label>
                     <input
                       type="text"
@@ -536,6 +837,11 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       onChange={(e) => setUpiId(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
+                    {bankInfo.upiId && !upiId && (
+                      <p className="text-[10px] text-amber-600 mt-1">
+                        पंजीकृत UPI: {bankInfo.upiId}
+                      </p>
+                    )}
                   </div>
                 )}
 

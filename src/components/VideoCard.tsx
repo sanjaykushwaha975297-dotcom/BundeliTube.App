@@ -51,11 +51,6 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, onPlay, language = 
           </div>
         </div>
 
-        {/* YouTube style Duration Badge on Bottom-Right */}
-        <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded-md bg-black/85 backdrop-blur-xs text-white text-[11px] font-semibold flex items-center tracking-wide">
-          <span>{video.duration}</span>
-        </div>
-
         {/* Badges Top-Left */}
         <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
           {video.isPromoted && (

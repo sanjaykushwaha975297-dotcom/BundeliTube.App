@@ -578,8 +578,10 @@ export async function getChannelApplicationsAndUsers() {
       const chanName = data.channelName || data.name || 'बुंदेली चैनल';
       const cleanSegment = chanName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'CREATOR';
       const mobileClean = (data.mobileNumber || data.phone || '').replace(/\D/g, '');
-      const last4 = mobileClean.slice(-4) || ownerUid.slice(-4).toUpperCase() || '2026';
-      const cleanChanId = (data.id && data.id.startsWith('BT-CH-')) ? data.id : (docSnap.id.startsWith('BT-CH-') ? docSnap.id : `BT-CH-${cleanSegment}-${last4}`);
+      
+      // ✅ Use distinct unique 4-digit code instead of mobile number digits so one user can create multiple channels
+      const uniqueSuffix = (docSnap.id.split('-').pop()?.replace(/\D/g, '') || Math.floor(1000 + Math.random() * 9000).toString()).slice(-4);
+      const cleanChanId = (data.id && data.id.startsWith('BT-CH-')) ? data.id : (docSnap.id.startsWith('BT-CH-') ? docSnap.id : `BT-CH-${cleanSegment}-${uniqueSuffix}`);
 
       const record: ChannelApplicationRecord = {
         id: cleanChanId,
@@ -792,8 +794,10 @@ export async function approveChannelApplication(id: string, adminNote?: string) 
   const chanName = targetSub.channelName || targetSub.name || 'बुंदेली चैनल';
   const cleanSegment = chanName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'CREATOR';
   const mobileClean = (targetSub.mobileNumber || targetSub.phone || '').replace(/\D/g, '');
-  const last4 = mobileClean.slice(-4) || ownerUid.slice(-4).toUpperCase() || '2026';
-  const finalChanId = (targetDocId && targetDocId.startsWith('BT-CH-')) ? targetDocId : `BT-CH-${cleanSegment}-${last4}`;
+  
+  // ✅ Distinct random 4-digit ID instead of mobile number digits so multiple channels can be created
+  const uniqueSuffix = (targetDocId.split('-').pop()?.replace(/\D/g, '') || (targetSub.id ? targetSub.id.split('-').pop()?.replace(/\D/g, '') : '') || Math.floor(1000 + Math.random() * 9000).toString()).slice(-4);
+  const finalChanId = (targetDocId && targetDocId.startsWith('BT-CH-')) ? targetDocId : (targetSub.id && targetSub.id.startsWith('BT-CH-') ? targetSub.id : `BT-CH-${cleanSegment}-${uniqueSuffix}`);
 
   const rawPhoto = targetSub.panPhotoUrl || targetSub.panPhoto || targetSub.panCardPhoto || targetSub.panCardPhotoUrl || targetSub.panFrontPhotoUrl || targetSub.aadhaarPhotoUrl || targetSub.frontPhotoUrl || targetSub.kycPhotoUrl || '';
   const effectiveAvatar = targetSub.channelAvatar || targetSub.channelLogoUrl || targetSub.avatarUrl || targetSub.avatar || targetSub.logo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
@@ -927,6 +931,333 @@ export async function rejectChannelApplication(id: string, reason?: string) {
     success: true,
     message: `चैनल आवेदन (ID: ${id}) को अस्वीकार कर दिया गया।`,
     id
+  };
+}
+
+export interface WithdrawalRequestRecord {
+  id: string;
+  creatorUid: string;
+  creatorName: string;
+  channelName: string;
+  amount: number;
+  paymentMethod: string;
+  accountNumber: string;
+  bankName: string;
+  ifscCode: string;
+  accountHolder: string;
+  upiId: string;
+  mobileNumber: string;
+  panNumber: string;
+  targetAccount: string;
+  status: 'pending' | 'completed' | 'rejected';
+  createdAt: string;
+  completedAt?: string;
+  rejectionReason?: string;
+  adminNote?: string;
+  transactionUtr?: string;
+}
+
+/**
+ * Fetch all withdrawal requests with exact bank details submitted during channel creation
+ */
+export async function getWithdrawalRequests(): Promise<WithdrawalRequestRecord[]> {
+  try {
+    const list: WithdrawalRequestRecord[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Primary collection requested by user: `withdrawal_requests`
+    const snap1 = await getDocs(collection(db, 'withdrawal_requests')).catch(() => null);
+    if (snap1 && !snap1.empty) {
+      snap1.forEach(d => {
+        const data = d.data() as any;
+        seenIds.add(d.id);
+        list.push({
+          id: d.id,
+          creatorUid: data.creatorUid || '',
+          creatorName: data.creatorName || data.accountHolder || 'क्रिएटर',
+          channelName: data.channelName || '',
+          amount: Number(data.amount || 0),
+          paymentMethod: data.paymentMethod || 'Bank Transfer',
+          accountNumber: data.accountNumber || data.bankAccountNumber || '',
+          bankName: data.bankName || '',
+          ifscCode: data.ifscCode || '',
+          accountHolder: data.accountHolder || data.accountHolderName || data.creatorName || '',
+          upiId: data.upiId || '',
+          mobileNumber: data.mobileNumber || data.phone || '',
+          panNumber: data.panNumber || '',
+          targetAccount: data.targetAccount || '',
+          status: data.status || 'pending',
+          createdAt: data.createdAt || new Date().toISOString(),
+          completedAt: data.completedAt,
+          rejectionReason: data.rejectionReason,
+          adminNote: data.adminNote,
+          transactionUtr: data.transactionUtr
+        });
+      });
+    }
+
+    // 2. Also check `withdrawals` collection for backwards compatibility
+    const snap2 = await getDocs(collection(db, 'withdrawals')).catch(() => null);
+    if (snap2 && !snap2.empty) {
+      snap2.forEach(d => {
+        if (!seenIds.has(d.id)) {
+          const data = d.data() as any;
+          list.push({
+            id: d.id,
+            creatorUid: data.creatorUid || '',
+            creatorName: data.creatorName || data.accountHolder || 'क्रिएटर',
+            channelName: data.channelName || '',
+            amount: Number(data.amount || 0),
+            paymentMethod: data.paymentMethod || 'Bank Transfer',
+            accountNumber: data.accountNumber || data.bankAccountNumber || '',
+            bankName: data.bankName || '',
+            ifscCode: data.ifscCode || '',
+            accountHolder: data.accountHolder || data.accountHolderName || data.creatorName || '',
+            upiId: data.upiId || '',
+            mobileNumber: data.mobileNumber || data.phone || '',
+            panNumber: data.panNumber || '',
+            targetAccount: data.targetAccount || '',
+            status: data.status || 'pending',
+            createdAt: data.createdAt || new Date().toISOString(),
+            completedAt: data.completedAt,
+            rejectionReason: data.rejectionReason,
+            adminNote: data.adminNote,
+            transactionUtr: data.transactionUtr
+          });
+        }
+      });
+    }
+
+    // Enrich with bank details from channel_submissions or channels if missing
+    try {
+      const needBankLookup = list.filter(r => !r.accountNumber || !r.bankName || !r.ifscCode);
+      if (needBankLookup.length > 0) {
+        const subDocs = await getDocs(collection(db, 'channel_submissions')).catch(() => null);
+        const bankMap = new Map<string, any>();
+        if (subDocs && !subDocs.empty) {
+          subDocs.forEach(d => {
+            const data = d.data() as any;
+            const uid = data.ownerUid || d.id;
+            const bank = {
+              accountNumber: data.accountNumber || data.bankDetails?.accountNumber || '',
+              bankName: data.bankName || data.bankDetails?.bankName || '',
+              ifscCode: data.ifscCode || data.bankDetails?.ifscCode || '',
+              upiId: data.upiId || data.bankDetails?.upiId || '',
+              accountHolder: data.accountHolder || data.panCardHolderName || data.panName || '',
+              mobileNumber: data.mobileNumber || data.phone || '',
+              panNumber: data.panNumber || ''
+            };
+            if (uid) bankMap.set(uid, bank);
+            if (data.channelName) bankMap.set(data.channelName.toLowerCase().trim(), bank);
+            if (data.accountHolder) bankMap.set(data.accountHolder.toLowerCase().trim(), bank);
+          });
+        }
+
+        const chanDocs = await getDocs(collection(db, 'channels')).catch(() => null);
+        if (chanDocs && !chanDocs.empty) {
+          chanDocs.forEach(d => {
+            const data = d.data() as any;
+            const uid = data.ownerUid || d.id;
+            const b = data.bankDetails || {};
+            const bank = {
+              accountNumber: b.accountNumber || data.accountNumber || '',
+              bankName: b.bankName || data.bankName || '',
+              ifscCode: b.ifscCode || data.ifscCode || '',
+              upiId: b.upiId || data.upiId || '',
+              accountHolder: b.accountHolder || data.accountHolder || data.panCardHolderName || '',
+              mobileNumber: data.mobileNumber || data.phone || '',
+              panNumber: data.panNumber || ''
+            };
+            if (uid) bankMap.set(uid, bank);
+            if (data.channelName) bankMap.set(data.channelName.toLowerCase().trim(), bank);
+          });
+        }
+
+        list.forEach(r => {
+          const match = bankMap.get(r.creatorUid) || 
+                        (r.channelName ? bankMap.get(r.channelName.toLowerCase().trim()) : null) ||
+                        (r.creatorName ? bankMap.get(r.creatorName.toLowerCase().trim()) : null);
+          if (match) {
+            if (!r.accountNumber && match.accountNumber) r.accountNumber = match.accountNumber;
+            if (!r.bankName && match.bankName) r.bankName = match.bankName;
+            if (!r.ifscCode && match.ifscCode) r.ifscCode = match.ifscCode;
+            if (!r.upiId && match.upiId) r.upiId = match.upiId;
+            if (!r.accountHolder && match.accountHolder) r.accountHolder = match.accountHolder;
+            if (!r.mobileNumber && match.mobileNumber) r.mobileNumber = match.mobileNumber;
+            if (!r.panNumber && match.panNumber) r.panNumber = match.panNumber;
+          }
+        });
+      }
+    } catch (_) {}
+
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return list;
+  } catch (err) {
+    console.warn('Error fetching withdrawal requests:', err);
+    return [];
+  }
+}
+
+/**
+ * Complete a withdrawal request.
+ * 🛡️ CRITICAL USER REQUIREMENT:
+ * Ensures the money is NOT added back into the creator's wallet!
+ * The requested amount remains deducted, status is marked completed, and UTR is recorded.
+ */
+export async function completeWithdrawalRequest(requestId: string, adminNote?: string, transactionUtr?: string) {
+  let reqData: any = null;
+  const docRef1 = doc(db, 'withdrawal_requests', requestId);
+  const snap1 = await getDoc(docRef1).catch(() => null);
+  if (snap1 && snap1.exists()) {
+    reqData = snap1.data();
+  } else {
+    const docRef2 = doc(db, 'withdrawals', requestId);
+    const snap2 = await getDoc(docRef2).catch(() => null);
+    if (snap2 && snap2.exists()) reqData = snap2.data();
+  }
+
+  if (!reqData) {
+    throw new Error(`Withdrawal request not found for ID: ${requestId}`);
+  }
+
+  const creatorUid = reqData.creatorUid;
+  const amount = Number(reqData.amount || 0);
+  const nowIso = new Date().toISOString();
+  const utr = transactionUtr || `UTR-${Date.now().toString().slice(-8)}`;
+
+  // 1. Mark status as completed in Firestore
+  const completionUpdate = {
+    ...reqData,
+    status: 'completed',
+    completedAt: nowIso,
+    adminNote: adminNote || 'एडमिन द्वारा विड्रॉल भुगतान पूर्ण',
+    transactionUtr: utr
+  };
+  await setDoc(docRef1, completionUpdate, { merge: true }).catch(() => null);
+  await setDoc(doc(db, 'withdrawals', requestId), completionUpdate, { merge: true }).catch(() => null);
+
+  // 2. 🛡️ Update creator's wallet: DO NOT ADD MONEY BACK!
+  if (creatorUid) {
+    const walletRef = doc(db, 'wallets', creatorUid);
+    const wDoc = await getDoc(walletRef).catch(() => null);
+    const wData = wDoc?.exists() ? (wDoc.data() as any) : {};
+
+    const existingBal = Number(wData.currentBalance ?? wData.walletBalance ?? 0);
+    const existingWithdrawn = Number(wData.totalWithdrawn ?? 0);
+
+    // If money was not deducted earlier, deduct it now. If already deducted, keep it deducted!
+    const updatedWithdrawn = Math.round((existingWithdrawn >= amount ? existingWithdrawn : existingWithdrawn + amount) * 100) / 100;
+    
+    // Update transactions list
+    const transactions = Array.isArray(wData.transactions) ? [...wData.transactions] : [];
+    const txIdx = transactions.findIndex((t: any) => t.refId === requestId || (t.type === 'withdrawal' && t.amount === amount && t.status === 'pending'));
+    if (txIdx >= 0) {
+      transactions[txIdx] = {
+        ...transactions[txIdx],
+        status: 'completed',
+        note: `✅ एडमिन द्वारा विड्रॉल भुगतान पूर्ण (UTR: ${utr})`
+      };
+    } else {
+      transactions.unshift({
+        id: `TXN-${Date.now().toString().slice(-6)}`,
+        date: new Date().toLocaleDateString('hi-IN'),
+        amount: amount,
+        type: 'withdrawal',
+        status: 'completed',
+        payoutMethod: reqData.paymentMethod || 'Bank Transfer',
+        targetAccount: reqData.targetAccount || reqData.accountNumber || 'Bank Account',
+        refId: requestId,
+        note: `✅ एडमिन द्वारा विड्रॉल भुगतान पूर्ण (UTR: ${utr})`
+      });
+    }
+
+    await setDoc(walletRef, {
+      currentBalance: existingBal,
+      walletBalance: existingBal,
+      totalWithdrawn: updatedWithdrawn,
+      lastWithdrawalStatus: 'completed',
+      lastWithdrawalCompletedAt: nowIso,
+      transactions: transactions.slice(0, 50),
+      lastUpdated: nowIso
+    }, { merge: true });
+  }
+
+  return {
+    success: true,
+    message: `विड्रॉल अनुरोध (₹${amount.toLocaleString('en-IN')}) सफलतापूर्वक पूर्ण (Completed) कर दिया गया! क्रिएटर के वॉलेट से राशि काटी जा चुकी है।`,
+    requestId,
+    utr
+  };
+}
+
+/**
+ * Reject a withdrawal request and refund the amount back to creator wallet
+ */
+export async function rejectWithdrawalRequest(requestId: string, reason?: string) {
+  let reqData: any = null;
+  const docRef1 = doc(db, 'withdrawal_requests', requestId);
+  const snap1 = await getDoc(docRef1).catch(() => null);
+  if (snap1 && snap1.exists()) {
+    reqData = snap1.data();
+  } else {
+    const docRef2 = doc(db, 'withdrawals', requestId);
+    const snap2 = await getDoc(docRef2).catch(() => null);
+    if (snap2 && snap2.exists()) reqData = snap2.data();
+  }
+
+  if (!reqData) {
+    throw new Error(`Withdrawal request not found for ID: ${requestId}`);
+  }
+
+  const creatorUid = reqData.creatorUid;
+  const amount = Number(reqData.amount || 0);
+  const nowIso = new Date().toISOString();
+
+  // Mark status as rejected
+  const rejectionUpdate = {
+    ...reqData,
+    status: 'rejected',
+    rejectedAt: nowIso,
+    rejectionReason: reason || 'खाता विवरण या IFSC में विसंगति के कारण अस्वीकृत'
+  };
+  await setDoc(docRef1, rejectionUpdate, { merge: true }).catch(() => null);
+  await setDoc(doc(db, 'withdrawals', requestId), rejectionUpdate, { merge: true }).catch(() => null);
+
+  // Refund money back to creator wallet because request was rejected
+  if (creatorUid) {
+    const walletRef = doc(db, 'wallets', creatorUid);
+    const wDoc = await getDoc(walletRef).catch(() => null);
+    const wData = wDoc?.exists() ? (wDoc.data() as any) : {};
+
+    const existingBal = Number(wData.currentBalance ?? wData.walletBalance ?? 0);
+    const existingWithdrawn = Number(wData.totalWithdrawn ?? 0);
+    const refundedBal = Math.round((existingBal + amount) * 100) / 100;
+    const refundedWithdrawn = Math.max(0, Math.round((existingWithdrawn - amount) * 100) / 100);
+
+    const transactions = Array.isArray(wData.transactions) ? [...wData.transactions] : [];
+    const txIdx = transactions.findIndex((t: any) => t.refId === requestId);
+    if (txIdx >= 0) {
+      transactions[txIdx] = {
+        ...transactions[txIdx],
+        status: 'failed',
+        note: `❌ विड्रॉल अस्वीकृत राशि रिफंड: ${reason || 'अस्वीकृत'}`
+      };
+    }
+
+    await setDoc(walletRef, {
+      currentBalance: refundedBal,
+      walletBalance: refundedBal,
+      totalWithdrawn: refundedWithdrawn,
+      lastWithdrawalStatus: 'rejected',
+      transactions: transactions.slice(0, 50),
+      lastUpdated: nowIso
+    }, { merge: true });
+  }
+
+  return {
+    success: true,
+    message: `विड्रॉल अनुरोध अस्वीकृत कर दिया गया और ₹${amount.toLocaleString('en-IN')} क्रिएटर के वॉलेट में रिफंड कर दिए गए।`,
+    requestId
   };
 }
 

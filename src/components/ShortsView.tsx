@@ -17,7 +17,10 @@ import {
   MoreVertical,
   ExternalLink,
   ShieldCheck,
-  Heart
+  Heart,
+  Volume2,
+  VolumeX,
+  Music
 } from 'lucide-react';
 import { ShortItem, Video, UserAccount } from '../types';
 import { MOCK_SHORTS } from '../data/mockData';
@@ -144,6 +147,34 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
   ]);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [channelModal, setChannelModal] = useState<{ channelName: string; channelId?: string; channelAvatar?: string } | null>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
+  const toggleMute = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setIsMuted(prev => {
+      const next = !prev;
+      if (isDirectVideo && nativeVideoRef.current) {
+        nativeVideoRef.current.muted = next;
+      } else {
+        sendIframeCommand(next ? 'mute' : 'unMute');
+      }
+      return next;
+    });
+  };
+
+  const handleRemix = () => {
+    if (onOpenUploadModal) {
+      onOpenUploadModal();
+    } else {
+      triggerToast(language === 'hi' ? 'इस ऑडियो से अपनी रील बनाएं 🎵' : 'Create short with this sound 🎵');
+    }
+  };
 
   // Touch Swipe Gesture Tracking for seamless vertical swipe like YouTube Shorts
   const touchStartYRef = useRef<number | null>(null);
@@ -568,7 +599,11 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
       setShortsList(prev => prev.map((s, idx) => idx === currentIndex ? { ...s, isLiked: liked } : s));
     }).catch(() => {});
 
-    checkUserSubscribedChannel(channelKey, currentUser?.id).then(subbed => {
+    const effectiveViewerUid = currentUser?.id && currentUser.id !== 'guest' 
+      ? currentUser.id 
+      : (typeof window !== 'undefined' ? localStorage.getItem('bt_guest_viewer_id') || '' : '');
+
+    checkUserSubscribedChannel(channelKey, currentShort.channelName, effectiveViewerUid).then(subbed => {
       setShortsList(prev => prev.map((s, idx) => idx === currentIndex ? { ...s, isSubscribed: subbed } : s));
     }).catch(() => {});
   }, [currentIndex, currentShort?.id, currentUser?.id]);
@@ -710,7 +745,7 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
       }));
     }
 
-    recordSubscription(normKey, currentShort.channelName, isNowSubbed, effectiveUser, rawChanId);
+    recordSubscription(normKey, currentShort.channelName, isNowSubbed, effectiveUser, rawChanId, nextCount);
   };
 
   // Helper to format short title strictly into a clean single line without hashtags (#trending, #viral, etc.) or trending words
@@ -840,15 +875,21 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
 
   return (
     <div 
-      className="fixed md:static inset-0 z-50 md:z-auto bg-black flex flex-col items-center justify-center min-h-[100dvh] md:min-h-[calc(100vh-100px)] select-none overflow-hidden touch-none"
+      className="fixed md:static inset-0 z-50 md:z-auto bg-[#0f0f0f] md:bg-transparent flex flex-col md:flex-row items-center justify-center min-h-[100dvh] md:min-h-[calc(100vh-100px)] select-none overflow-hidden touch-none md:gap-5"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
     >
-      
-      {/* Container: Vertical Shorts Reel Frame */}
-      <div className="relative w-full h-full md:w-[380px] md:h-[680px] lg:h-[720px] md:rounded-3xl overflow-hidden bg-black md:border md:border-slate-800 flex flex-col justify-between group/short md:shadow-2xl">
+      {/* Toast Notification Pill */}
+      {toastMessage && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-slate-900/90 text-white text-xs font-semibold shadow-2xl border border-white/15 backdrop-blur-md animate-in fade-in zoom-in-95">
+          {toastMessage}
+        </div>
+      )}
+
+      {/* Container: Vertical Shorts Reel Frame (Exact YouTube Shorts Aspect & Styling) */}
+      <div className="relative w-full h-full md:w-[390px] md:h-[690px] lg:w-[410px] lg:h-[730px] md:rounded-2xl overflow-hidden bg-black md:border md:border-neutral-800 flex flex-col justify-between group/short md:shadow-2xl">
         
         {/* Shorts Feed Screen: When Ad is Active -> Show Dedicated Sponsored Short Card */}
         {isAdPlaying ? (
@@ -862,18 +903,18 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
           />
         ) : (
           <>
-            {/* Native Shorts Video Player (Full Screen Coverage) */}
+            {/* Native / YouTube Shorts Video Player (Full Screen Coverage) */}
             <div 
-              onClick={isDirectVideo ? handleScreenTap : undefined}
-              className="absolute inset-0 w-full h-full z-0 bg-black flex items-center justify-center overflow-hidden"
+              onClick={handleScreenTap}
+              className="absolute inset-0 w-full h-full z-0 bg-black flex items-center justify-center overflow-hidden cursor-pointer"
             >
               {resolvedYouTubeId ? (
                 <iframe
                   key={resolvedYouTubeId}
                   ref={iframeRef}
-                  src={`https://www.youtube.com/embed/${resolvedYouTubeId}?autoplay=1&loop=1&playlist=${resolvedYouTubeId}&playsinline=1&controls=1&enablejsapi=1&rel=0`}
+                  src={`https://www.youtube.com/embed/${resolvedYouTubeId}?autoplay=1&loop=1&playlist=${resolvedYouTubeId}&playsinline=1&controls=0&enablejsapi=1&rel=0&modestbranding=1&iv_load_policy=3`}
                   title={currentShort.title}
-                  className="w-full h-full border-0 pointer-events-auto"
+                  className="w-full h-full border-0 pointer-events-none"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
                 />
@@ -892,7 +933,7 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
                       setResolvedShortStream(FALLBACK_VIDEO_STREAMS[0]);
                     }
                   }}
-                  className="w-full h-full object-cover cursor-pointer"
+                  className="w-full h-full object-cover"
                   onTimeUpdate={(e) => {
                     const vid = e.currentTarget;
                     if (!isScrubbing && vid.duration) {
@@ -903,7 +944,7 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
               )}
             </div>
 
-            {/* Double-Tap Heart Animation Overlay */}
+            {/* Double-Tap Heart Animation Overlay (YouTube Shorts Feature) */}
             {doubleTapHeart && (
               <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none animate-in zoom-in-50 fade-in duration-300">
                 <div className="p-4 rounded-full bg-black/40 backdrop-blur-sm animate-ping">
@@ -912,219 +953,320 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
               </div>
             )}
 
-            {/* Center Play/Pause Indicator on Pause (HTML5 Native Only) */}
-            {isDirectVideo && !isPlaying && !isAdPlaying && (
+            {/* Center Play Indicator on Pause (Exact YouTube Shorts Overlay) */}
+            {!isPlaying && !isAdPlaying && (
               <div 
                 onClick={handleScreenTap}
-                className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-pointer"
+                className="absolute inset-0 z-15 flex items-center justify-center bg-black/35 backdrop-blur-[1px] cursor-pointer"
               >
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-black/70 text-white flex items-center justify-center border border-white/20 shadow-2xl scale-110">
-                  <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1" />
+                <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-black/60 text-white flex items-center justify-center border border-white/20 shadow-2xl transition-transform hover:scale-105 active:scale-95">
+                  <Play className="w-9 h-9 sm:w-10 sm:h-10 fill-white text-white ml-1" />
                 </div>
               </div>
             )}
 
-        {/* Top Overlay Controls & Mobile Back Navigation */}
-        <div className="relative z-20 p-3.5 sm:p-4 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent pt-safe pointer-events-none">
-          <div className="flex items-center gap-2 pointer-events-auto">
-            {onClose && (
+            {/* Top Header Controls (Exact YouTube Shorts App Style) */}
+            <div className="relative z-20 p-3 sm:p-4 flex items-center justify-between bg-gradient-to-b from-black/85 via-black/30 to-transparent pt-safe pointer-events-none">
+              <div className="flex items-center gap-2.5 pointer-events-auto">
+                {onClose && (
+                  <button
+                    onClick={onClose}
+                    className="p-2 -ml-1 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-md transition border border-white/10 cursor-pointer"
+                    title={language === 'hi' ? 'वापस जाएँ' : 'Back'}
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                )}
+
+                {/* YouTube Shorts Logo Badge */}
+                <div className="flex items-center gap-1.5 select-none">
+                  <div className="w-6 h-6 rounded-md bg-red-600 flex items-center justify-center shadow-md">
+                    <Play className="w-3 h-3 fill-white text-white ml-0.5" />
+                  </div>
+                  <span className="text-white font-black text-base sm:text-lg tracking-tight drop-shadow-md">
+                    Shorts
+                  </span>
+                </div>
+              </div>
+
+              {/* Top-Right Controls: Mute Toggle & More Options */}
+              <div className="flex items-center gap-2 pointer-events-auto">
+                <button
+                  onClick={toggleMute}
+                  className="w-9 h-9 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-md flex items-center justify-center border border-white/10 transition cursor-pointer shadow-md"
+                  title={isMuted ? (language === 'hi' ? 'आवाज़ खोलें' : 'Unmute') : (language === 'hi' ? 'म्यूट करें' : 'Mute')}
+                >
+                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-white" />}
+                </button>
+
+                <div className="relative">
+                  <button
+                    onClick={() => setShowMoreMenu(prev => !prev)}
+                    className="w-9 h-9 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-md flex items-center justify-center border border-white/10 transition cursor-pointer shadow-md"
+                    title="More options"
+                  >
+                    <MoreVertical className="w-4 h-4 text-white" />
+                  </button>
+
+                  {/* More Options Dropdown */}
+                  {showMoreMenu && (
+                    <div className="absolute right-0 top-11 w-48 bg-neutral-900/95 border border-neutral-700/80 backdrop-blur-xl rounded-2xl shadow-2xl p-1.5 z-50 text-xs text-neutral-200 animate-in fade-in zoom-in-95">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard?.writeText(window.location.href);
+                          setShowMoreMenu(false);
+                          triggerToast(language === 'hi' ? 'लिंक कॉपी हो गया!' : 'Link copied!');
+                        }}
+                        className="w-full px-3 py-2 rounded-xl flex items-center gap-2.5 hover:bg-white/10 transition text-left cursor-pointer"
+                      >
+                        <Share2 className="w-4 h-4 text-neutral-400" />
+                        <span>{language === 'hi' ? 'लिंक कॉपी करें' : 'Copy link'}</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          toggleMute();
+                          setShowMoreMenu(false);
+                        }}
+                        className="w-full px-3 py-2 rounded-xl flex items-center gap-2.5 hover:bg-white/10 transition text-left cursor-pointer"
+                      >
+                        {isMuted ? <Volume2 className="w-4 h-4 text-neutral-400" /> : <VolumeX className="w-4 h-4 text-neutral-400" />}
+                        <span>{isMuted ? (language === 'hi' ? 'आवाज़ चालू करें' : 'Unmute') : (language === 'hi' ? 'म्यूट करें' : 'Mute')}</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowComments(true);
+                          setShowMoreMenu(false);
+                        }}
+                        className="w-full px-3 py-2 rounded-xl flex items-center gap-2.5 hover:bg-white/10 transition text-left cursor-pointer"
+                      >
+                        <MessageSquare className="w-4 h-4 text-neutral-400" />
+                        <span>{language === 'hi' ? 'टिप्पणियाँ देखें' : 'View comments'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Floating Action Bar (Exact YouTube Shorts Column) */}
+            <div className="absolute right-2 sm:right-3 bottom-14 sm:bottom-16 z-20 flex flex-col items-center gap-3 sm:gap-4 text-white pointer-events-none">
+              
+              {/* Like */}
               <button
-                onClick={onClose}
-                className="p-2 -ml-1 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-md transition border border-white/10 cursor-pointer"
-                title={language === 'hi' ? 'वापस जाएँ' : 'Back'}
+                onClick={handleLike}
+                className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
               >
-                <ArrowLeft className="w-5 h-5" />
+                <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center backdrop-blur-md transition shadow-lg active:scale-90 ${
+                  currentShort.isLiked
+                    ? 'bg-white text-black'
+                    : 'bg-black/40 hover:bg-black/60 text-white'
+                }`}>
+                  <ThumbsUp className={`w-5 h-5 sm:w-6 sm:h-6 ${currentShort.isLiked ? 'fill-black' : ''}`} />
+                </div>
+                <span className="text-[11px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                  {currentShort.likes ? `${(currentShort.likes / 1000).toFixed(1)}K` : (language === 'hi' ? 'लाइक' : 'Like')}
+                </span>
               </button>
-            )}
 
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/10 text-white text-xs font-bold shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{language === 'hi' ? 'बुंदेली रील्स' : 'Bundeli Shorts'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Floating Action Bar Inside the Video (YouTube Mobile App Style) */}
-        <div className="absolute right-3 sm:right-4 bottom-20 z-20 flex flex-col items-center gap-4 sm:gap-5 text-white pointer-events-none">
-          
-          {/* Like */}
-          <button
-            onClick={handleLike}
-            className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
-          >
-            <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center backdrop-blur-md transition shadow-lg ${
-              currentShort.isLiked
-                ? 'bg-amber-500 text-slate-950 scale-110 shadow-amber-500/40'
-                : 'bg-black/50 text-white border border-white/15 hover:bg-black/80'
-            }`}>
-              <ThumbsUp className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
-            </div>
-            <span className="text-[11px] font-bold text-white drop-shadow-md">
-              {(currentShort.likes / 1000).toFixed(1)}k
-            </span>
-          </button>
-
-          {/* Dislike */}
-          <button
-            onClick={handleDislike}
-            className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
-          >
-            <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center backdrop-blur-md transition shadow-lg ${
-              currentShort.isDisliked
-                ? 'bg-slate-700 text-white'
-                : 'bg-black/50 text-white border border-white/15 hover:bg-black/80'
-            }`}>
-              <ThumbsDown className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-[10px] font-bold text-slate-200 drop-shadow-md">
-              {language === 'hi' ? 'नापसंद' : 'Dislike'}
-            </span>
-          </button>
-
-          {/* Comments */}
-          <button
-            onClick={() => setShowComments(!showComments)}
-            className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/50 text-white border border-white/15 hover:bg-black/80 flex items-center justify-center backdrop-blur-md transition shadow-lg">
-              <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-[11px] font-bold text-white drop-shadow-md">
-              {currentShort.commentsCount}
-            </span>
-          </button>
-
-          {/* Share */}
-          <button
-            onClick={() => setIsShareOpen(true)}
-            className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/50 text-white border border-white/15 hover:bg-black/80 flex items-center justify-center backdrop-blur-md transition shadow-lg">
-              <Share2 className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-[10px] font-bold text-white drop-shadow-md">
-              {t.share}
-            </span>
-          </button>
-
-          {/* Up/Down Navigation Buttons for Desktop */}
-          <div className="hidden md:flex flex-col gap-2 pt-1 pointer-events-auto">
-            <button
-              onClick={handlePrev}
-              disabled={currentIndex === 0}
-              className="p-2.5 rounded-full bg-black/60 text-white hover:bg-black/90 disabled:opacity-40 transition border border-white/15 shadow-lg cursor-pointer"
-              title="Previous Short"
-            >
-              <ChevronUp className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleNext}
-              className="p-2.5 rounded-full bg-black/60 text-white hover:bg-black/90 transition border border-white/15 shadow-lg cursor-pointer"
-              title="Next Short"
-            >
-              <ChevronDown className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Bottom Overlay: Metadata, Channel, Audio Track (Transparent with no black shadow overlay) */}
-        {/* Bottom Overlay: Metadata, Channel & Title (Elevated cleanly above progress line / controls) */}
-        <div className="relative z-20 px-4 pt-2 pb-14 sm:pb-16 mb-2 bg-transparent space-y-2 max-w-[calc(100%-70px)] pointer-events-none">
-          
-          {/* Channel Info & Subscribe */}
-          <div className="flex items-center gap-2.5 flex-wrap pointer-events-auto">
-            {/* Clickable Channel Avatar & Name to Open Full Channel Page */}
-            <div
-              onClick={() => setChannelModal({
-                channelName: currentShort.channelName,
-                channelId: (currentShort as any).channelId,
-                channelAvatar: currentShort.channelAvatar
-              })}
-              className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition group/chan select-none"
-              title={language === 'hi' ? `${currentShort.channelName} चैनल देखें (वीडियो व टॉप वीडियो)` : `View ${currentShort.channelName} channel`}
-            >
-              <img
-                src={currentShort.channelAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'}
-                alt={currentShort.channelName}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-2 ring-amber-400 group-hover/chan:ring-white transition shrink-0 shadow-md"
-              />
-              <div className="min-w-0">
-                <span className="font-bold text-white text-xs sm:text-sm drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] truncate block max-w-[140px] sm:max-w-[180px] group-hover/chan:text-amber-300 transition-colors">
-                  {currentShort.channelName}
-                </span>
-                <span className="text-[10px] text-amber-300/95 font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] block">
-                  {getSubscribersText((currentShort as any).channelId, currentShort.channelName)}
-                </span>
-              </div>
-            </div>
-
-            {/* Subscribe Button - Red initially, removes red when subscribed */}
-            <button
-              onClick={handleToggleSubscribe}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shadow-md shrink-0 cursor-pointer ml-auto flex items-center gap-1.5 ${
-                currentShort.isSubscribed
-                  ? 'bg-slate-800/85 hover:bg-slate-700/85 text-slate-200 border border-white/20 backdrop-blur-md'
-                  : 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/30'
-              }`}
-            >
-              {currentShort.isSubscribed ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{language === 'hi' ? 'सब्सक्राइब्ड' : 'Subscribed'}</span>
-                </>
-              ) : (
-                <span>{language === 'hi' ? 'सब्सक्राइब' : 'Subscribe'}</span>
-              )}
-            </button>
-          </div>
-
-          {/* Title - Elevated safely above red line, strictly single line without hashtags or trending keywords */}
-          <p 
-            className="text-xs sm:text-sm font-medium text-white truncate whitespace-nowrap overflow-hidden text-ellipsis drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] leading-snug select-none"
-            title={formatShortTitle(currentShort.title)}
-          >
-            {formatShortTitle(currentShort.title)}
-          </p>
-        </div>
-
-        {/* YouTube Shorts Pure Red Progress Line & Interactive Scrubber Bar (Only when Direct Video) */}
-        {isDirectVideo && (
-          <div 
-            ref={progressBarRef}
-            onPointerDown={handleSeekPointerDown}
-            onPointerMove={handleSeekPointerMove}
-            onPointerUp={handleSeekPointerUp}
-            onMouseLeave={() => setHoverTime(null)}
-            className="absolute bottom-0 inset-x-0 h-3 group/seeker cursor-pointer z-30 flex items-end pb-0.5 touch-none"
-          >
-            {/* Scrubber Hover Floating Timestamp Tooltip */}
-            {hoverTime && (
-              <div 
-                className="absolute -top-7 transform -translate-x-1/2 px-2 py-0.5 rounded bg-black/90 text-white text-[10px] font-mono font-bold shadow-lg pointer-events-none z-40 border border-white/20 backdrop-blur-sm"
-                style={{ left: `${hoverTime.x}px` }}
+              {/* Dislike */}
+              <button
+                onClick={handleDislike}
+                className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
               >
-                {formatTime(hoverTime.time)}
+                <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center backdrop-blur-md transition shadow-lg active:scale-90 ${
+                  currentShort.isDisliked
+                    ? 'bg-white text-black'
+                    : 'bg-black/40 hover:bg-black/60 text-white'
+                }`}>
+                  <ThumbsDown className={`w-5 h-5 sm:w-6 sm:h-6 ${currentShort.isDisliked ? 'fill-black' : ''}`} />
+                </div>
+                <span className="text-[10px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                  {language === 'hi' ? 'नापसंद' : 'Dislike'}
+                </span>
+              </button>
+
+              {/* Comments */}
+              <button
+                onClick={() => setShowComments(!showComments)}
+                className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
+              >
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-md transition shadow-lg active:scale-90">
+                  <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6" />
+                </div>
+                <span className="text-[11px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                  {currentShort.commentsCount || 0}
+                </span>
+              </button>
+
+              {/* Share */}
+              <button
+                onClick={() => setIsShareOpen(true)}
+                className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
+              >
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-md transition shadow-lg active:scale-90">
+                  <Share2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                </div>
+                <span className="text-[10px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                  {language === 'hi' ? 'शेयर' : 'Share'}
+                </span>
+              </button>
+
+              {/* Remix */}
+              <button
+                onClick={handleRemix}
+                className="flex flex-col items-center gap-1 group cursor-pointer pointer-events-auto"
+              >
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-md transition shadow-lg active:scale-90">
+                  <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+                </div>
+                <span className="text-[10px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                  {language === 'hi' ? 'रीमिक्स' : 'Remix'}
+                </span>
+              </button>
+
+              {/* Sound Track Disc (Signature YouTube Shorts Spinning Album Cover) */}
+              <div
+                onClick={handleRemix}
+                className="relative cursor-pointer pointer-events-auto group/disc pt-1"
+                title={language === 'hi' ? 'मूल ऑडियो' : 'Original Sound'}
+              >
+                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg overflow-hidden border-2 border-white/60 shadow-xl bg-neutral-800 flex items-center justify-center transition-transform group-hover/disc:scale-105 ${isPlaying && !isAdPlaying ? 'animate-spin [animation-duration:5s]' : ''}`}>
+                  <img
+                    src={currentShort.channelAvatar || currentShort.thumbnail || 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=100'}
+                    alt="audio"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                  <Music className="w-2 h-2" />
+                </div>
               </div>
-            )}
-
-            {/* Red Background Track */}
-            <div className="relative w-full h-[3px] group-hover/short:h-[5px] bg-white/25 transition-all">
-              {/* Red Active Filled Track */}
-              <div 
-                className="absolute left-0 top-0 bottom-0 bg-red-600 shadow-sm"
-                style={{ width: `${Math.max(0, Math.min(100, (currentTime / durationSeconds) * 100))}%` }}
-              />
-
-              {/* Red Round Knob (Scrubber Thumb) */}
-              <div 
-                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-red-600 border-2 border-white shadow-lg opacity-0 group-hover/short:opacity-100 group-hover/seeker:scale-125 transition-all pointer-events-none z-40"
-                style={{ left: `${Math.max(0, Math.min(100, (currentTime / durationSeconds) * 100))}%` }}
-              />
             </div>
-          </div>
-        )}
+
+            {/* Bottom Overlay: Metadata, Channel, Subscribe, Audio Track (Pure YouTube Shorts Layout) */}
+            <div className="relative z-20 px-3.5 sm:px-4 pt-10 pb-3 sm:pb-3.5 bg-gradient-to-t from-black/95 via-black/60 to-transparent space-y-2 max-w-[calc(100%-65px)] pointer-events-none select-none">
+              
+              {/* Channel Info & Subscribe */}
+              <div className="flex items-center gap-2.5 flex-wrap pointer-events-auto">
+                <div
+                  onClick={() => setChannelModal({
+                    channelName: currentShort.channelName,
+                    channelId: (currentShort as any).channelId,
+                    channelAvatar: currentShort.channelAvatar
+                  })}
+                  className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition group/chan select-none"
+                  title={language === 'hi' ? `${currentShort.channelName} चैनल देखें` : `View ${currentShort.channelName}`}
+                >
+                  <img
+                    src={currentShort.channelAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'}
+                    alt={currentShort.channelName}
+                    className="w-9 h-9 rounded-full object-cover ring-2 ring-white/30 shadow-md group-hover/chan:ring-white transition shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <span className="font-bold text-white text-xs sm:text-sm drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] truncate block max-w-[130px] sm:max-w-[170px]">
+                      @{currentShort.channelName}
+                    </span>
+                    <span className="text-[10px] text-white/80 font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] block">
+                      {getSubscribersText((currentShort as any).channelId, currentShort.channelName)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* YouTube Subscribe Pill */}
+                <button
+                  onClick={handleToggleSubscribe}
+                  className={`text-xs transition-all shadow-md shrink-0 cursor-pointer active:scale-95 flex items-center gap-1.5 ${
+                    currentShort.isSubscribed
+                      ? 'bg-white/20 hover:bg-white/30 text-white font-medium px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10'
+                      : 'bg-white hover:bg-white/90 text-black font-bold px-3.5 py-1.5 rounded-full'
+                  }`}
+                >
+                  {currentShort.isSubscribed ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                      <span>{language === 'hi' ? 'सब्सक्राइब किया' : 'Subscribed'}</span>
+                    </>
+                  ) : (
+                    <span>{language === 'hi' ? 'सब्सक्राइब' : 'Subscribe'}</span>
+                  )}
+                </button>
+              </div>
+
+              {/* Title / Description */}
+              <p 
+                className="text-xs sm:text-sm font-normal text-white line-clamp-2 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] leading-snug"
+                title={formatShortTitle(currentShort.title)}
+              >
+                {formatShortTitle(currentShort.title)}
+              </p>
+
+              {/* Sound / Music Track Bar */}
+              <div 
+                onClick={handleRemix}
+                className="flex items-center gap-1.5 text-white/90 text-[11px] font-medium drop-shadow-md cursor-pointer pointer-events-auto hover:text-white transition group/sound"
+              >
+                <Music className="w-3.5 h-3.5 text-white shrink-0 group-hover/sound:scale-110 transition" />
+                <span className="truncate max-w-[200px] sm:max-w-[240px]">
+                  {language === 'hi' ? `मूल ऑडियो - ${currentShort.channelName}` : `Original sound - ${currentShort.channelName}`}
+                </span>
+              </div>
+            </div>
+
+            {/* YouTube Shorts Pure Red Progress Line & Interactive Scrubber */}
+            <div 
+              ref={progressBarRef}
+              onPointerDown={handleSeekPointerDown}
+              onPointerMove={handleSeekPointerMove}
+              onPointerUp={handleSeekPointerUp}
+              onMouseLeave={() => setHoverTime(null)}
+              className="absolute bottom-0 inset-x-0 h-2 group/seeker cursor-pointer z-30 flex items-end touch-none"
+            >
+              {/* Scrubber Hover Floating Timestamp Tooltip */}
+              {hoverTime && (
+                <div 
+                  className="absolute -top-7 transform -translate-x-1/2 px-2 py-0.5 rounded bg-black/90 text-white text-[10px] font-mono font-bold shadow-lg pointer-events-none z-40 border border-white/20 backdrop-blur-sm"
+                  style={{ left: `${hoverTime.x}px` }}
+                >
+                  {formatTime(hoverTime.time)}
+                </div>
+              )}
+
+              {/* Red Background Track */}
+              <div className="relative w-full h-[2.5px] group-hover/short:h-[4px] bg-white/20 transition-all">
+                {/* Pure YouTube Red Active Track */}
+                <div 
+                  className="absolute left-0 top-0 bottom-0 bg-[#ff0000] shadow-sm transition-all"
+                  style={{ width: `${Math.max(0, Math.min(100, (currentTime / durationSeconds) * 100))}%` }}
+                />
+
+                {/* Red Round Knob */}
+                <div 
+                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-[#ff0000] border border-white shadow-lg opacity-0 group-hover/short:opacity-100 group-hover/seeker:scale-125 transition-all pointer-events-none z-40"
+                  style={{ left: `${Math.max(0, Math.min(100, (currentTime / durationSeconds) * 100))}%` }}
+                />
+              </div>
+            </div>
           </>
         )}
+      </div>
+
+      {/* Desktop Chevrons Navigation (YouTube Web Style Beside Reel) */}
+      <div className="hidden md:flex flex-col gap-3 z-20">
+        <button
+          onClick={handlePrev}
+          disabled={currentIndex === 0}
+          className="w-12 h-12 rounded-full bg-neutral-900/90 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed text-white flex items-center justify-center shadow-xl border border-neutral-700/80 transition cursor-pointer active:scale-95"
+          title={language === 'hi' ? 'पिछला शॉर्ट (↑)' : 'Previous Short (↑)'}
+        >
+          <ChevronUp className="w-6 h-6" />
+        </button>
+        <button
+          onClick={handleNext}
+          className="w-12 h-12 rounded-full bg-neutral-900/90 hover:bg-neutral-800 text-white flex items-center justify-center shadow-xl border border-neutral-700/80 transition cursor-pointer active:scale-95"
+          title={language === 'hi' ? 'अगला शॉर्ट (↓)' : 'Next Short (↓)'}
+        >
+          <ChevronDown className="w-6 h-6" />
+        </button>
       </div>
 
       {/* Slide-out Comments Drawer (Mobile and Desktop Friendly) */}

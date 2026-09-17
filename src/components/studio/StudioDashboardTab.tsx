@@ -31,8 +31,10 @@ import {
   where,
   orderBy,
   limit,
-  onSnapshot
+  onSnapshot,
+  normalizeChannelId
 } from '../../lib/firebase';
+import { doc } from 'firebase/firestore';
 
 interface StudioDashboardTabProps {
   channel: Channel;
@@ -90,10 +92,54 @@ export const StudioDashboardTab: React.FC<StudioDashboardTabProps> = ({
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [liveComments, setLiveComments] = useState<StudioComment[]>([]);
 
+  // Real-time subscriber count for the creator's channel
+  const [liveSubCount, setLiveSubCount] = useState<number>(() => {
+    try {
+      const counts = JSON.parse(localStorage.getItem('bt_channel_sub_counts') || '{}');
+      if (channel.id && typeof counts[channel.id] === 'number') return counts[channel.id];
+      const normId = normalizeChannelId(channel.id, channel.name);
+      if (typeof counts[normId] === 'number') return counts[normId];
+      if (channel.name && typeof counts[channel.name.trim()] === 'number') return counts[channel.name.trim()];
+    } catch (_) {}
+    return channel.subscribers || 0;
+  });
+
+  // Keep liveSubCount updated when channel prop changes
+  useEffect(() => {
+    if (typeof channel.subscribers === 'number') {
+      setLiveSubCount(channel.subscribers);
+    }
+  }, [channel.subscribers]);
+
   // Subscribe to real-time subscribers for this creator channel
   useEffect(() => {
+    const normChannelId = normalizeChannelId(channel.id, channel.name);
+    let unsubCh1: (() => void) | undefined;
+    let unsubCh2: (() => void) | undefined;
+    let unsubSub1: (() => void) | undefined;
+    let unsubSub2: (() => void) | undefined;
+
     try {
       const db = getFirestoreSafe();
+
+      const handleCountSnap = (docSnap: any) => {
+        if (docSnap.exists()) {
+          const d = docSnap.data();
+          if (typeof d.subscribers === 'number') {
+            setLiveSubCount(Math.max(0, d.subscribers));
+          }
+        }
+      };
+
+      if (channel.id) {
+        unsubCh1 = onSnapshot(doc(db, 'channels', channel.id), handleCountSnap, () => {});
+        unsubSub1 = onSnapshot(doc(db, 'channel_submissions', channel.id), handleCountSnap, () => {});
+      }
+      if (normChannelId && normChannelId !== channel.id) {
+        unsubCh2 = onSnapshot(doc(db, 'channels', normChannelId), handleCountSnap, () => {});
+        unsubSub2 = onSnapshot(doc(db, 'channel_submissions', normChannelId), handleCountSnap, () => {});
+      }
+
       const subQuery = query(
         collection(db, 'channel_subscribers'),
         where('creatorChannelId', '==', channel.id),
@@ -177,15 +223,35 @@ export const StudioDashboardTab: React.FC<StudioDashboardTabProps> = ({
         }
       }, () => {});
 
+      // Broadcast subscription event listener
+      const handleBroadcastSub = (e: any) => {
+        const detail = e.detail;
+        if (!detail) return;
+        const isMatch = 
+          detail.channelId === channel.id || 
+          detail.channelId === normChannelId ||
+          detail.legacyChannelId === channel.id ||
+          detail.channelName === channel.name?.trim();
+        if (isMatch && typeof detail.subscribersCount === 'number') {
+          setLiveSubCount(detail.subscribersCount);
+        }
+      };
+      window.addEventListener('bt_subscription_changed', handleBroadcastSub);
+
       return () => {
+        if (unsubCh1) unsubCh1();
+        if (unsubCh2) unsubCh2();
+        if (unsubSub1) unsubSub1();
+        if (unsubSub2) unsubSub2();
         unsubSub();
         unsubLikes();
         unsubComments();
+        window.removeEventListener('bt_subscription_changed', handleBroadcastSub);
       };
     } catch (e) {
       console.warn('Dashboard real-time sync note:', e);
     }
-  }, [channel.id]);
+  }, [channel.id, channel.name]);
 
   return (
     <div id="studio-dashboard-tab" className="space-y-6 animate-in fade-in">
@@ -331,11 +397,11 @@ export const StudioDashboardTab: React.FC<StudioDashboardTabProps> = ({
             <span className="text-[11px] text-slate-400 block">{t.studioSubscribersCount}</span>
             <div className="flex items-baseline justify-between mt-1">
               <span className="text-3xl font-black text-slate-100 font-mono tracking-tight">
-                {(channel.subscribers || 0).toLocaleString('en-IN')}
+                {liveSubCount.toLocaleString('en-IN')}
               </span>
               <span className="text-xs font-bold text-emerald-400 font-mono flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
                 <TrendingUp className="w-3 h-3" />
-                {channel.subscribers > 0 ? `+${channel.subscribers}` : '0'}
+                {liveSubCount > 0 ? `+${liveSubCount}` : '0'}
               </span>
             </div>
           </div>

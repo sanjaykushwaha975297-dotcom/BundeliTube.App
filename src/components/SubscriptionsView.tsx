@@ -214,9 +214,6 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
             >
               <div className="relative aspect-video sm:w-64 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 shrink-0">
                 <img src={video.thumbnail || 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=600&auto=format&fit=crop&q=80'} alt={video.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-white text-[10px] font-mono">
-                  {video.duration}
-                </span>
               </div>
               <div className="flex-1 space-y-1.5">
                 <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition">

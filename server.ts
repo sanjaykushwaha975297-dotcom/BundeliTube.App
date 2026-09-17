@@ -40,7 +40,10 @@ import {
   startFirestoreDistributionListener,
   getChannelApplicationsAndUsers,
   approveChannelApplication,
-  rejectChannelApplication
+  rejectChannelApplication,
+  getWithdrawalRequests,
+  completeWithdrawalRequest,
+  rejectWithdrawalRequest
 } from "./server/externalAdminService.js";
 import { getExternalAdminPortalHtml } from "./server/externalAdminPortalHtml.js";
 
@@ -154,6 +157,47 @@ app.post("/api/external-admin/reject-channel", async (req: Request, res: Respons
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 8. External Admin API: Fetch all withdrawal requests with exact channel bank details
+app.get("/api/external-admin/withdrawal-requests", async (_req: Request, res: Response) => {
+  try {
+    const requests = await getWithdrawalRequests();
+    res.json({ success: true, requests });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9. External Admin API: Complete withdrawal request (tick mark action)
+// 🛡️ CRITICAL: Keeps funds deducted from creator wallet, marks status completed!
+app.post("/api/external-admin/complete-withdrawal", async (req: Request, res: Response) => {
+  try {
+    const { requestId, adminNote, transactionUtr } = req.body;
+    if (!requestId) return res.status(400).json({ success: false, error: "requestId is required" });
+    const result = await completeWithdrawalRequest(requestId, adminNote, transactionUtr);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 10. External Admin API: Reject withdrawal request & refund wallet
+app.post("/api/external-admin/reject-withdrawal", async (req: Request, res: Response) => {
+  try {
+    const { requestId, reason } = req.body;
+    if (!requestId) return res.status(400).json({ success: false, error: "requestId is required" });
+    const result = await rejectWithdrawalRequest(requestId, reason);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Explicit Google AdSense / AdMob ads.txt & app-ads.txt crawlers route
+app.get(["/ads.txt", "/app-ads.txt"], (_req: Request, res: Response) => {
+  res.type("text/plain");
+  res.send("google.com, pub-5666532653138550, DIRECT, f08c47fec0942fa0\n");
 });
 
 // 5. External Admin API: Integration Guide & Code documentation for external websites
@@ -295,15 +339,6 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    // Explicit route for sitemap.xml to prevent SPA wildcard catch-all redirection
-    app.get("/sitemap.xml", (_req: Request, res: Response) => {
-      const sitemapPath = path.join(process.cwd(), "public", "sitemap.xml");
-      if (fs.existsSync(sitemapPath)) {
-        res.setHeader("Content-Type", "application/xml; charset=utf-8");
-        return res.sendFile(sitemapPath);
-      }
-      res.status(404).send("Sitemap not found");
-    });
     app.use(express.static(distPath));
     app.get("*", (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, "index.html"));

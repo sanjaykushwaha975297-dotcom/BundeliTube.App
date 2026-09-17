@@ -113,6 +113,17 @@ export interface AppUserSettings {
   theme: 'dark' | 'light';
 }
 
+export interface BankDetails {
+  accountHolder: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName: string;
+  branchName?: string;
+  upiId?: string;
+  mobileNumber?: string;
+  panNumber?: string;
+}
+
 export interface Channel {
   id: string;
   name: string;
@@ -136,14 +147,7 @@ export interface Channel {
   aadhaarFrontPhotoUrl?: string;
   aadhaarBackPhotoUrl?: string;
   mobileNumber?: string;
-  bankDetails?: {
-    accountHolder: string;
-    accountNumber: string;
-    ifscCode: string;
-    bankName: string;
-    branchName?: string;
-    upiId?: string;
-  };
+  bankDetails?: BankDetails;
   totalViews: number;
   views24h?: number;
   totalAdImpressions?: number;
@@ -181,6 +185,7 @@ export interface ChannelSubmission {
   ifscCode?: string;
   branchName?: string;
   upiId?: string;
+  bankDetails?: BankDetails;
   status: 'pending' | 'approved' | 'rejected';
   approvalStatus?: 'pending' | 'approved' | 'rejected';
   kycStatus?: string;

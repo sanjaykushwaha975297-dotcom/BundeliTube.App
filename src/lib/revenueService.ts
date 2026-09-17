@@ -522,43 +522,67 @@ export async function updateCreatorPayoutByAdmin(params: {
   adminNote?: string;
   panCardHolderName?: string;
   channelName?: string;
+  isWithdrawal?: boolean;
+  actionType?: 'credit_earning' | 'complete_withdrawal';
 }): Promise<{ success: boolean; message: string; currentBalance?: number }> {
   try {
     const db = getFirestoreSafe();
-    const { creatorId, channelId = creatorId, payoutAmount, adminNote, panCardHolderName, channelName } = params;
+    const { creatorId, channelId = creatorId, payoutAmount, adminNote, panCardHolderName, channelName, isWithdrawal, actionType } = params;
     const timestamp = new Date().toISOString();
     const txId = `payout-admin-${Date.now()}`;
+    const isWithdrawalAction = isWithdrawal === true || actionType === 'complete_withdrawal';
+
+    // Fetch existing wallet document
+    const walletRef = doc(db, 'wallets', creatorId);
+    const walletDoc = await getDoc(walletRef).catch(() => null);
+    const existingWallet = walletDoc?.exists() ? (walletDoc.data() as any) : {};
+    const existingBal = Number(existingWallet?.currentBalance ?? existingWallet?.walletBalance ?? 0);
+    const existingWithdrawn = Number(existingWallet?.totalWithdrawn ?? 0);
+    const existingLife = Number(existingWallet?.lifetimeEarnings ?? existingWallet?.totalEarned ?? 0);
+    const existingTransactions = Array.isArray(existingWallet?.transactions) ? existingWallet.transactions : [];
+
+    let currentBalance: number;
+    let totalWithdrawn: number;
+    let lifetimeEarnings: number;
+
+    if (isWithdrawalAction) {
+      // 🛡️ WITHDRAWAL COMPLETION: Money must NOT be added back!
+      // If it was already deducted at request time, balance remains same; otherwise deduct it.
+      currentBalance = existingBal;
+      totalWithdrawn = existingWithdrawn >= payoutAmount ? existingWithdrawn : Number((existingWithdrawn + payoutAmount).toFixed(2));
+      lifetimeEarnings = existingLife;
+    } else {
+      // Direct revenue credit (Earnings/Bonus)
+      currentBalance = Number((existingBal + payoutAmount).toFixed(2));
+      totalWithdrawn = existingWithdrawn;
+      lifetimeEarnings = Number((existingLife + payoutAmount).toFixed(2));
+    }
 
     const payoutTx = {
       id: txId,
       date: new Date().toLocaleDateString('hi-IN'),
       amount: payoutAmount,
-      type: 'earning' as const,
+      type: (isWithdrawalAction ? 'withdrawal' : 'earning') as any,
       status: 'completed' as const,
-      payoutMethod: 'Admin Direct Payout',
+      payoutMethod: isWithdrawalAction ? 'Bank/UPI Transfer' : 'Admin Direct Payout',
       targetAccount: panCardHolderName ? `PAN: ${panCardHolderName}` : 'Creator Bank/UPI',
       refId: `ADMIN-PAY-${Date.now().toString().slice(-6)}`,
-      note: adminNote || `एडमिन पैनल द्वारा जारी पेआउट (+₹${payoutAmount.toFixed(2)})`
+      note: adminNote || (isWithdrawalAction 
+        ? `एडमिन द्वारा विड्रॉल भुगतान पूर्ण (अंतरित ₹${payoutAmount.toFixed(2)})`
+        : `एडमिन पैनल द्वारा जारी पेआउट (+₹${payoutAmount.toFixed(2)})`)
     };
-
-    // Update wallet document
-    const walletRef = doc(db, 'wallets', creatorId);
-    const walletDoc = await getDoc(walletRef).catch(() => null);
-    const existingWallet = walletDoc?.exists() ? (walletDoc.data() as any) : {};
-    const currentBalance = Number((existingWallet?.currentBalance ?? existingWallet?.walletBalance ?? 0) + payoutAmount);
-    const lifetimeEarnings = Number((existingWallet?.lifetimeEarnings ?? existingWallet?.totalEarned ?? 0) + payoutAmount);
-    const existingTransactions = Array.isArray(existingWallet?.transactions) ? existingWallet.transactions : [];
 
     const updatedWalletData = {
       currentBalance,
       walletBalance: currentBalance,
+      totalWithdrawn,
       lifetimeEarnings,
       totalEarned: lifetimeEarnings,
       adminPayoutBalance: currentBalance,
       lastPayoutAmount: payoutAmount,
       lastPayoutDate: timestamp,
-      lastPayoutNote: adminNote || 'Admin Manual Release',
-      transactions: [payoutTx, ...existingTransactions],
+      lastPayoutNote: adminNote || (isWithdrawalAction ? 'Admin Withdrawal Completed' : 'Admin Manual Release'),
+      transactions: [payoutTx, ...existingTransactions.filter((t: any) => t.id !== txId)].slice(0, 50),
       lastUpdated: timestamp,
       serverTimestamp: serverTimestamp()
     };

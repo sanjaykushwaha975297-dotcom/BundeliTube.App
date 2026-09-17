@@ -162,14 +162,26 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
 
     const generatedHandle = `@${channelName.trim().toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9_]/gi, '') || 'bundelichannel'}`;
     
-    // Meaningful, human-readable channel ID (e.g. BT-CH-PRIYANSH-3119)
+    // Meaningful, human-readable unique channel ID (e.g. BT-CH-BUNDELIS-8492)
     const cleanNameSegment = channelName
       .trim()
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, '')
       .slice(0, 8) || 'CREATOR';
-    const mobileLast4 = cleanMobile.slice(-4) || (currentUser?.id || '').slice(-4).toUpperCase() || Math.floor(1000 + Math.random() * 9000).toString();
-    const cleanChanId = `BT-CH-${cleanNameSegment}-${mobileLast4}`;
+
+    // Generate an independent unique 4-digit number (1000-9999) instead of using mobile number digits,
+    // so a creator can submit multiple distinct channels without ID collisions or overwriting
+    let uniqueChannelNum = Math.floor(1000 + Math.random() * 9000).toString();
+    let cleanChanId = `BT-CH-${cleanNameSegment}-${uniqueChannelNum}`;
+
+    try {
+      const cachedSubs = JSON.parse(localStorage.getItem('bt_channel_submissions') || '[]');
+      const existingIds = new Set(cachedSubs.map((s: any) => s.id));
+      while (existingIds.has(cleanChanId)) {
+        uniqueChannelNum = Math.floor(1000 + Math.random() * 9000).toString();
+        cleanChanId = `BT-CH-${cleanNameSegment}-${uniqueChannelNum}`;
+      }
+    } catch (_) {}
 
     const effectiveUid = currentUser?.id || 'user';
     const effectiveLogo = channelLogoPreview || currentUser?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
@@ -218,6 +230,16 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
       ifscCode: ifscCode.trim().toUpperCase() || undefined,
       branchName: branchName.trim() || undefined,
       upiId: upiId.trim() || undefined,
+      bankDetails: {
+        bankName: bankName.trim() || '',
+        accountHolder: accountHolder.trim() || cleanPanName || currentUser?.name || '',
+        accountNumber: accountNumber.trim() || '',
+        ifscCode: ifscCode.trim().toUpperCase() || '',
+        branchName: branchName.trim() || '',
+        upiId: upiId.trim() || '',
+        mobileNumber: cleanMobile,
+        panNumber: cleanPan
+      },
       status: 'pending',
       approvalStatus: 'pending',
       kycStatus: 'pending',
@@ -229,10 +251,29 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
     try {
       const db = getFirestoreSafe();
       
-      // 1. Submit ONLY to channel_submissions for admin verification!
-      // (Do NOT create pending duplicate in channels so external admin website displays exactly ONE card)
+      const bankPayload = {
+        bankName: bankName.trim() || '',
+        accountHolder: accountHolder.trim() || cleanPanName || currentUser?.name || '',
+        accountNumber: accountNumber.trim() || '',
+        ifscCode: ifscCode.trim().toUpperCase() || '',
+        branchName: branchName.trim() || '',
+        upiId: upiId.trim() || '',
+        mobileNumber: cleanMobile,
+        panNumber: cleanPan
+      };
+
+      try {
+        localStorage.setItem('bt_bank_details', JSON.stringify(bankPayload));
+        if (effectiveUid) {
+          localStorage.setItem(`bt_bank_details_${effectiveUid}`, JSON.stringify(bankPayload));
+        }
+      } catch (_) {}
+
+      // 1. Submit to channel_submissions for admin verification with complete bank credentials
       const cleanSubData = cleanFirestoreData({
         ...submission,
+        ...bankPayload,
+        bankDetails: bankPayload,
         channelAvatar: effectiveLogo,
         channelLogoUrl: effectiveLogo,
         avatarUrl: effectiveLogo,
@@ -242,26 +283,37 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
         console.warn('Firestore channel_submissions write warning:', err);
       });
 
-      // 2. Remove any old unapproved/duplicate pending document in channels collection
+      // 2. Remove unapproved/duplicate pending document in channels collection (preserve approved channels)
+      const isAlreadyApproved = currentUser?.channelStatus === 'approved' || currentUser?.role === 'creator';
       if (effectiveUid && effectiveUid !== 'user') {
-        deleteDoc(doc(db, 'channels', `chan-${effectiveUid}`)).catch(() => {});
-        deleteDoc(doc(db, 'channels', effectiveUid)).catch(() => {});
+        if (!isAlreadyApproved) {
+          deleteDoc(doc(db, 'channels', `chan-${effectiveUid}`)).catch(() => {});
+          deleteDoc(doc(db, 'channels', effectiveUid)).catch(() => {});
+        }
         deleteDoc(doc(db, 'channels', submission.id)).catch(() => {});
       }
 
-      // 3. Keep user profile as regular viewer with pending partner program status in users collection
+      // 3. Keep user profile in users collection (save bank details so wallet can always find them)
       if (effectiveUid && effectiveUid !== 'user') {
         await setDoc(doc(db, 'users', effectiveUid), cleanFirestoreData({
-          role: 'viewer', // Normal user until approved!
-          channelStatus: 'pending',
-          approvalStatus: 'pending',
-          partnerProgramStatus: 'applied',
-          channelId: submission.id,
-          channelName: submission.channelName,
-          channelHandle: submission.channelHandle,
-          avatar: effectiveLogo,
-          channelLogoUrl: effectiveLogo,
+          ...(isAlreadyApproved ? {} : {
+            role: 'viewer', // Normal user until approved!
+            channelStatus: 'pending',
+            approvalStatus: 'pending',
+            partnerProgramStatus: 'applied',
+            channelId: submission.id,
+            channelName: submission.channelName,
+            channelHandle: submission.channelHandle,
+            avatar: effectiveLogo,
+            channelLogoUrl: effectiveLogo,
+          }),
           mobileNumber: submission.mobileNumber,
+          bankDetails: bankPayload,
+          accountNumber: bankPayload.accountNumber,
+          bankName: bankPayload.bankName,
+          ifscCode: bankPayload.ifscCode,
+          accountHolder: bankPayload.accountHolder,
+          upiId: bankPayload.upiId,
           updatedAt: new Date().toISOString(),
           serverTimestamp: serverTimestamp()
         }), { merge: true }).catch((err) => {

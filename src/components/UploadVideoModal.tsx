@@ -88,7 +88,7 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
   const [artist, setArtist] = useState('');
   const [category, setCategory] = useState('rai');
   const [description, setDescription] = useState('');
-  const [duration, setDuration] = useState('4:30');
+  const [duration, setDuration] = useState('');
   const [tags, setTags] = useState('बुंदेली राई, लोकगीत, Bundeli Video');
   const [customThumbnail, setCustomThumbnail] = useState('');
   const [hasPaidPromotion, setHasPaidPromotion] = useState(false);
@@ -117,7 +117,6 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
     if (val.includes('/shorts/')) {
       setVideoFormat('short');
       setCategory('shorts');
-      setDuration('0:50');
     }
 
     if (yId) {
@@ -195,7 +194,7 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
 
     const finalChannelName = (effectiveChanName.trim() || artist.trim() || 'कलाकार').trim();
     const finalThumbnail = customThumbnail || `https://img.youtube.com/vi/${yId}/hqdefault.jpg`;
-    const finalDuration = duration.trim() || (isShortFormat ? '0:50' : '4:30');
+    const finalDuration = duration.trim();
     const submissionId = `vid-${Date.now()}`;
 
     const submissionData: VideoSubmission = {
@@ -523,7 +522,6 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
                   onClick={() => {
                     setVideoFormat('video');
                     if (category === 'shorts') setCategory('rai');
-                    if (duration === '0:50') setDuration('4:30');
                   }}
                   className={`py-2.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                     videoFormat === 'video'
@@ -752,13 +750,13 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{language === 'hi' ? 'वीडियो की अवधि (Duration mm:ss)' : 'Duration (mm:ss)'}</span>
+                    <span>{language === 'hi' ? 'वीडियो की अवधि (वैकल्पिक / Optional)' : 'Duration (Optional)'}</span>
                   </label>
                   <input
                     type="text"
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
-                    placeholder={videoFormat === 'short' ? '0:50' : '4:30'}
+                    placeholder={videoFormat === 'short' ? 'उदा. 0:50 (वैकल्पिक)' : 'उदा. 3:45 (वैकल्पिक)'}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100 text-xs sm:text-sm focus:outline-hidden focus:border-amber-500 font-mono"
                   />
                 </div>
