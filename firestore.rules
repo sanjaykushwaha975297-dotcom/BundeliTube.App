@@ -85,6 +85,9 @@ service cloud.firestore {
     match /withdrawal_lock_logs/{logId} {
       allow read, write: if true;
     }
+    match /withdrawal_requests/{reqId} {
+      allow read, write: if true;
+    }
 
     // Payout Requests (50% Creator Payouts)
     match /payout_requests/{payoutId} {
