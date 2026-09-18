@@ -1228,7 +1228,8 @@ export async function rejectWithdrawalRequest(requestId: string, reason?: string
     };
   }
 
-  const creatorUid = reqData.creatorUid;
+  const creatorUid = reqData.creatorUid || reqData.userId;
+  const channelId = reqData.channelId;
   const amount = Number(reqData.amount || 0);
   const nowIso = new Date().toISOString();
 
@@ -1288,14 +1289,20 @@ export async function rejectWithdrawalRequest(requestId: string, reason?: string
       });
     }
 
-    await setDoc(walletRef, {
+    const walletPayload = {
       currentBalance: refundedBal,
       walletBalance: refundedBal,
       totalWithdrawn: refundedWithdrawn,
       lastWithdrawalStatus: 'rejected',
       transactions: transactions.slice(0, 50),
       lastUpdated: nowIso
-    }, { merge: true });
+    };
+
+    await setDoc(walletRef, walletPayload, { merge: true });
+
+    if (channelId && channelId !== creatorUid) {
+      await setDoc(doc(db, 'wallets', channelId), walletPayload, { merge: true }).catch(() => null);
+    }
   }
 
   return {
