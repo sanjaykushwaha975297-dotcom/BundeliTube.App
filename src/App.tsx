@@ -2887,28 +2887,52 @@ export default function App() {
     setNotifications(prev => [newNotif, ...prev]);
   };
 
-  const handleWithdrawalRequested = (amount: number, method: 'UPI' | 'Bank Transfer', target: string) => {
+  const handleWithdrawalRequested = (
+    amount: number, 
+    method: 'UPI' | 'Bank Transfer', 
+    target: string, 
+    requestId?: string, 
+    createdTx?: any
+  ) => {
     setWallet(prev => {
+      // 🛡️ Deduplication Guard: Check if transaction already exists
+      if (requestId && prev.transactions.some(t => t.refId === requestId || t.id === requestId)) {
+        return prev;
+      }
+      if (createdTx && prev.transactions.some(t => t.id === createdTx.id || (createdTx.refId && t.refId === createdTx.refId))) {
+        return prev;
+      }
+
+      // Check if another pending withdrawal transaction with same amount was added recently
+      const hasRecentPending = prev.transactions.some(t => 
+        t.type === 'withdrawal' && 
+        t.status === 'pending' && 
+        t.amount === amount && 
+        (t.refId === requestId || (!requestId && t.targetAccount === target))
+      );
+      if (hasRecentPending) {
+        return prev;
+      }
+
+      const txToAdd = createdTx || {
+        id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
+        date: language === 'hi' ? 'आज (Today)' : 'Today',
+        amount: amount,
+        type: 'withdrawal' as const,
+        status: 'pending' as const,
+        payoutMethod: method,
+        targetAccount: target,
+        refId: requestId || `PAY-${Date.now().toString().slice(-8)}`,
+        note: language === 'hi' ? `${method} द्वारा निकासी अनुरोध दर्ज (लंबित)` : `Withdrawal requested via ${method} (Pending)`
+      };
+
       const newBal = Math.max(0, Math.round((prev.currentBalance - amount) * 100) / 100);
       const newWithdrawn = Math.round(((prev.totalWithdrawn || 0) + amount) * 100) / 100;
       const updated: CreatorWallet = {
         ...prev,
         currentBalance: newBal,
         totalWithdrawn: newWithdrawn,
-        transactions: [
-          {
-            id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
-            date: language === 'hi' ? 'आज (Today)' : 'Today',
-            amount: amount,
-            type: 'withdrawal',
-            status: 'pending',
-            payoutMethod: method,
-            targetAccount: target,
-            refId: `PAY-${Date.now().toString().slice(-8)}`,
-            note: language === 'hi' ? `${method} द्वारा निकासी अनुरोध दर्ज (लंबित)` : `Withdrawal requested via ${method} (Pending)`
-          },
-          ...prev.transactions
-        ]
+        transactions: [txToAdd, ...prev.transactions.filter(t => t.id !== txToAdd.id && t.refId !== (requestId || txToAdd.refId))]
       };
       safeStorage.setJSON('bt_wallet', updated);
       return updated;
