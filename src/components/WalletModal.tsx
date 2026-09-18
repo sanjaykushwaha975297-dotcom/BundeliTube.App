@@ -135,6 +135,12 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    // Reset submission & success states when opened so previous rejections/submissions don't block new ones
+    setIsSubmitting(false);
+    isSubmittingRef.current = false;
+    setRequestSuccess(false);
+    setErrorMsg('');
+
     let isMounted = true;
     const fetchLatestBankDetails = async () => {
       try {
@@ -384,12 +390,33 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       // 1. 🛡️ CRITICAL PERSISTENCE: Write with the same ID to BOTH `withdrawal_requests` AND `withdrawals`
       // This ensures that whether the creator, external admin portal, or Firebase Console inspects
       // `withdrawal_requests` or `withdrawals`, the record is 100% permanently saved!
-      // (The admin backend uses seenIds to ensure it is never displayed twice).
-      await Promise.all([
-        setDoc(doc(db, 'withdrawal_requests', withdrawalRequestId), payoutDoc),
-        setDoc(doc(db, 'withdrawals', withdrawalRequestId), payoutDoc),
-        setDoc(doc(db, 'payout_requests', withdrawalRequestId), payoutDoc).catch(() => null)
-      ]);
+      let savedToFirestore = false;
+      const writeErrors: any[] = [];
+
+      try {
+        await setDoc(doc(db, 'withdrawal_requests', withdrawalRequestId), payoutDoc);
+        savedToFirestore = true;
+      } catch (errWr) {
+        console.warn('withdrawal_requests write notice:', errWr);
+        writeErrors.push(errWr);
+      }
+
+      try {
+        await setDoc(doc(db, 'withdrawals', withdrawalRequestId), payoutDoc);
+        savedToFirestore = true;
+      } catch (errW) {
+        console.warn('withdrawals write notice:', errW);
+        writeErrors.push(errW);
+      }
+
+      try {
+        await setDoc(doc(db, 'payout_requests', withdrawalRequestId), payoutDoc);
+        savedToFirestore = true;
+      } catch (_) {}
+
+      if (!savedToFirestore) {
+        throw new Error(writeErrors[0]?.message || 'Failed to save to Firebase withdrawal collections');
+      }
 
       // Save/persist bank details to channel, users and channel_submissions for permanence
       if (effectiveAccNum || effectiveUpi) {
@@ -526,10 +553,22 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 ? `₹${parseFloat(withdrawAmount).toLocaleString('en-IN')} का निकासी अनुरोध व्यवस्थापक पेआउट डेस्क को भेज दिया गया है। 24-48 व्यावसायिक घंटों में राशि आपके खाते में क्रेडिट होगी।`
                 : `Your withdrawal request of ₹${parseFloat(withdrawAmount).toLocaleString('en-IN')} is submitted for processing. Funds will be credited within 24-48 business hours.`}
             </p>
-            <div className="pt-4">
+            <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setRequestSuccess(false);
+                  setIsSubmitting(false);
+                  isSubmittingRef.current = false;
+                  setErrorMsg('');
+                }}
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold transition-colors cursor-pointer text-sm"
+              >
+                {language === 'hi' ? 'दूसरा विड्रॉल दर्ज करें' : 'Submit Another Request'}
+              </button>
               <button
                 onClick={resetAndClose}
-                className="px-8 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-colors shadow-lg shadow-amber-500/20 cursor-pointer"
+                className="w-full sm:w-auto px-8 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-colors shadow-lg shadow-amber-500/20 cursor-pointer text-sm"
               >
                 {t.close}
               </button>
