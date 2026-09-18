@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   IndianRupee, 
@@ -40,7 +40,7 @@ interface WalletModalProps {
   wallet: CreatorWallet;
   channel: Channel;
   currentUser: UserAccount;
-  onWithdrawalRequested: (amount: number, method: 'UPI' | 'Bank Transfer', target: string) => void;
+  onWithdrawalRequested: (amount: number, method: 'UPI' | 'Bank Transfer', target: string, requestId?: string, newTx?: any) => void;
   onOpenPolicies?: (tab?: string) => void;
   language: Language;
   remoteConfig?: RemoteAppConfig;
@@ -75,6 +75,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [payoutMethod, setPayoutMethod] = useState<'UPI' | 'Bank Transfer'>('Bank Transfer');
   const [upiId, setUpiId] = useState(channel.bankDetails?.upiId || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
+  const lastSubmitTimeRef = useRef(0);
   const [requestSuccess, setRequestSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
@@ -267,6 +269,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
   const handleWithdrawalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 🛡️ Concurrency & Debounce Lock: Prevent duplicate / rapid double clicks from firing twice
+    if (isSubmitting || isSubmittingRef.current || (Date.now() - lastSubmitTimeRef.current < 4000)) {
+      return;
+    }
+    isSubmittingRef.current = true;
+    lastSubmitTimeRef.current = Date.now();
+    setIsSubmitting(true);
     setErrorMsg('');
 
     // ✅ एडमिन पैनल के रिमोट स्विच का पालन करें:
@@ -274,6 +284,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       setErrorMsg(language === 'hi'
         ? 'निकासी विंडो व्यवस्थापक द्वारा लॉक है। एडमिन पैनल वेबसाइट द्वारा अनलॉक किए जाने पर ही निकासी संभव है।'
         : 'Withdrawal window is currently locked by Admin. It opens when unlocked by the Admin Panel.');
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       return;
     }
 
@@ -282,6 +294,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       setErrorMsg(language === 'hi' 
         ? `न्यूनतम निकासी राशि ₹${minLimit.toLocaleString('en-IN')} होनी चाहिए।` 
         : `Minimum withdrawal amount is ₹${minLimit.toLocaleString('en-IN')}.`);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       return;
     }
 
@@ -289,6 +303,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       setErrorMsg(language === 'hi' 
         ? 'निकासी राशि वर्तमान वॉलेट शेष से अधिक नहीं हो सकती।' 
         : 'Withdrawal amount exceeds available wallet balance.');
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       return;
     }
 
@@ -303,6 +319,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         ? 'कृपया अपना पूरा बैंक खाता संख्या और IFSC कोड दर्ज करें।' 
         : 'Please provide full bank account number and IFSC code.');
       setIsEditingBank(true);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       return;
     }
 
@@ -310,6 +328,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       setErrorMsg(language === 'hi' 
         ? 'कृपया अपनी UPI ID दर्ज करें।' 
         : 'Please enter a valid UPI ID.');
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       return;
     }
 
@@ -317,14 +337,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       ? effectiveUpi
       : `${effectiveBankName} - A/C: ${effectiveAccNum} (IFSC: ${effectiveIfsc}, Holder: ${effectiveHolder})`;
 
-    setIsSubmitting(true);
+    let createdWithdrawalTx: any = null;
+    let withdrawalRequestId = '';
 
     try {
       const db = getFirestoreSafe();
       const nowIso = new Date().toISOString();
 
       const reqRef = doc(collection(db, 'withdrawal_requests'));
-      const withdrawalRequestId = reqRef.id;
+      withdrawalRequestId = reqRef.id;
 
       // ✅ Exact Bank Account & UPI Details submitted during channel creation
       const payoutDoc = cleanFirestoreData({
@@ -359,12 +380,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         serverTimestamp: serverTimestamp()
       });
 
-      // 1. Write to `withdrawal_requests` (Primary collection)
+      // 1. Write strictly to `withdrawal_requests` (Single Canonical Primary Collection)
+      // 🛡️ Do NOT duplicate into `withdrawals` or `payout_requests` to avoid 2 submissions appearing in admin panel!
       await setDoc(reqRef, payoutDoc);
-
-      // 2. Also write to `withdrawals` and `payout_requests` for complete compatibility
-      await setDoc(doc(db, 'withdrawals', withdrawalRequestId), payoutDoc, { merge: true }).catch(() => null);
-      await setDoc(doc(db, 'payout_requests', withdrawalRequestId), payoutDoc, { merge: true }).catch(() => null);
 
       // Save/persist bank details to channel, users and channel_submissions for permanence
       if (effectiveAccNum || effectiveUpi) {
@@ -407,7 +425,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       const newBal = Math.max(0, Math.round((wallet.currentBalance - numAmount) * 100) / 100);
       const newWithdrawn = Math.round(((wallet.totalWithdrawn || 0) + numAmount) * 100) / 100;
 
-      const newTx = {
+      createdWithdrawalTx = {
         id: `TXN-${Date.now().toString().slice(-6)}`,
         date: new Date().toLocaleDateString('hi-IN'),
         amount: numAmount,
@@ -423,7 +441,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           : `Withdrawal requested via ${payoutMethod} (Pending)`
       };
 
-      const updatedTxs = [newTx, ...(wallet.transactions || [])].slice(0, 50);
+      const updatedTxs = [createdWithdrawalTx, ...(wallet.transactions || []).filter(t => t.refId !== withdrawalRequestId)].slice(0, 50);
 
       const walletRef = doc(db, 'wallets', currentUser.id);
       await setDoc(walletRef, cleanFirestoreData({
@@ -457,13 +475,16 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     } catch (err) {
       console.error('Firestore payout write error:', err);
     } finally {
-      onWithdrawalRequested(numAmount, payoutMethod, targetAccountFormatted);
+      onWithdrawalRequested(numAmount, payoutMethod, targetAccountFormatted, withdrawalRequestId, createdWithdrawalTx);
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
       setRequestSuccess(true);
     }
   };
 
   const resetAndClose = () => {
+    isSubmittingRef.current = false;
+    setIsSubmitting(false);
     setRequestSuccess(false);
     setErrorMsg('');
     onClose();
