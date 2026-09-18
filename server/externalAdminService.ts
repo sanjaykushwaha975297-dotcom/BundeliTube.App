@@ -1120,6 +1120,16 @@ export async function completeWithdrawalRequest(requestId: string, adminNote?: s
     throw new Error(`Withdrawal request not found for ID: ${requestId}`);
   }
 
+  // 🛡️ Idempotent check: If already completed, do not re-process
+  if (reqData.status === 'completed') {
+    return {
+      success: true,
+      message: 'यह विड्रॉल अनुरोध पहले ही पूर्ण (Completed) हो चुका है।',
+      requestId,
+      utr: reqData.transactionUtr || ''
+    };
+  }
+
   const creatorUid = reqData.creatorUid;
   const amount = Number(reqData.amount || 0);
   const nowIso = new Date().toISOString();
@@ -1209,16 +1219,28 @@ export async function rejectWithdrawalRequest(requestId: string, reason?: string
     throw new Error(`Withdrawal request not found for ID: ${requestId}`);
   }
 
+  // 🛡️ Guard against duplicate rejection / double refund
+  if (reqData.status === 'rejected' || reqData.refunded === true) {
+    return {
+      success: false,
+      message: 'यह विड्रॉल अनुरोध पहले ही अस्वीकृत व रिफंड किया जा चुका है। दोबारा रिफंड नहीं किया जा सकता।',
+      requestId
+    };
+  }
+
   const creatorUid = reqData.creatorUid;
   const amount = Number(reqData.amount || 0);
   const nowIso = new Date().toISOString();
 
-  // Mark status as rejected
+  // Mark status as rejected AND set refunded: true
   const rejectionUpdate = {
     ...reqData,
     status: 'rejected',
     rejectedAt: nowIso,
-    rejectionReason: reason || 'खाता विवरण या IFSC में विसंगति के कारण अस्वीकृत'
+    rejectionReason: reason || 'खाता विवरण या IFSC में विसंगति के कारण अस्वीकृत',
+    refunded: true,
+    refundedAt: nowIso,
+    refundAmount: amount
   };
   await setDoc(docRef1, rejectionUpdate, { merge: true }).catch(() => null);
   await setDoc(doc(db, 'withdrawals', requestId), rejectionUpdate, { merge: true }).catch(() => null);
@@ -1229,19 +1251,41 @@ export async function rejectWithdrawalRequest(requestId: string, reason?: string
     const wDoc = await getDoc(walletRef).catch(() => null);
     const wData = wDoc?.exists() ? (wDoc.data() as any) : {};
 
+    const transactions = Array.isArray(wData.transactions) ? [...wData.transactions] : [];
+    const txIdx = transactions.findIndex((t: any) => t.refId === requestId || t.id === requestId);
+
+    // 🛡️ If the transaction is already rejected/failed, wallet was already refunded!
+    if (txIdx >= 0 && (transactions[txIdx].status === 'rejected' || transactions[txIdx].status === 'failed')) {
+      return {
+        success: true,
+        message: 'विड्रॉल पहले ही रिफंड किया जा चुका है।',
+        requestId
+      };
+    }
+
     const existingBal = Number(wData.currentBalance ?? wData.walletBalance ?? 0);
     const existingWithdrawn = Number(wData.totalWithdrawn ?? 0);
     const refundedBal = Math.round((existingBal + amount) * 100) / 100;
     const refundedWithdrawn = Math.max(0, Math.round((existingWithdrawn - amount) * 100) / 100);
 
-    const transactions = Array.isArray(wData.transactions) ? [...wData.transactions] : [];
-    const txIdx = transactions.findIndex((t: any) => t.refId === requestId);
     if (txIdx >= 0) {
       transactions[txIdx] = {
         ...transactions[txIdx],
-        status: 'failed',
+        status: 'rejected',
         note: `❌ विड्रॉल अस्वीकृत राशि रिफंड: ${reason || 'अस्वीकृत'}`
       };
+    } else {
+      transactions.unshift({
+        id: `TXN-REF-${Date.now().toString().slice(-6)}`,
+        date: new Date().toLocaleDateString('hi-IN'),
+        amount: amount,
+        type: 'withdrawal',
+        status: 'rejected',
+        payoutMethod: reqData.paymentMethod || 'Bank Transfer',
+        targetAccount: reqData.targetAccount || reqData.accountNumber || 'Bank Account',
+        refId: requestId,
+        note: `❌ विड्रॉल अस्वीकृत राशि रिफंड: ${reason || 'अस्वीकृत'}`
+      });
     }
 
     await setDoc(walletRef, {
