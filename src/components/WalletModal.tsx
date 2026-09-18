@@ -270,8 +270,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const handleWithdrawalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 🛡️ Concurrency & Debounce Lock: Prevent duplicate / rapid double clicks from firing twice
-    if (isSubmitting || isSubmittingRef.current || (Date.now() - lastSubmitTimeRef.current < 4000)) {
+    // 🛡️ Concurrency lock: Prevent rapid double clicking on the button while submission is in progress
+    if (isSubmitting || isSubmittingRef.current) {
       return;
     }
     isSubmittingRef.current = true;
@@ -344,6 +344,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       const db = getFirestoreSafe();
       const nowIso = new Date().toISOString();
 
+      // Generate canonical unique ID for this withdrawal request
       const reqRef = doc(collection(db, 'withdrawal_requests'));
       withdrawalRequestId = reqRef.id;
 
@@ -380,9 +381,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         serverTimestamp: serverTimestamp()
       });
 
-      // 1. Write strictly to `withdrawal_requests` (Single Canonical Primary Collection)
-      // 🛡️ Do NOT duplicate into `withdrawals` or `payout_requests` to avoid 2 submissions appearing in admin panel!
-      await setDoc(reqRef, payoutDoc);
+      // 1. 🛡️ CRITICAL PERSISTENCE: Write with the same ID to BOTH `withdrawal_requests` AND `withdrawals`
+      // This ensures that whether the creator, external admin portal, or Firebase Console inspects
+      // `withdrawal_requests` or `withdrawals`, the record is 100% permanently saved!
+      // (The admin backend uses seenIds to ensure it is never displayed twice).
+      await Promise.all([
+        setDoc(doc(db, 'withdrawal_requests', withdrawalRequestId), payoutDoc),
+        setDoc(doc(db, 'withdrawals', withdrawalRequestId), payoutDoc),
+        setDoc(doc(db, 'payout_requests', withdrawalRequestId), payoutDoc).catch(() => null)
+      ]);
 
       // Save/persist bank details to channel, users and channel_submissions for permanence
       if (effectiveAccNum || effectiveUpi) {
@@ -420,8 +427,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         } catch (_) {}
       }
 
-      // 3. 🛡️ CRITICAL: Deduct balance from Firestore `wallets/{currentUser.id}` IMMEDIATELY
-      // Prevents the money from reverting or adding back upon page refresh / onSnapshot
+      // 3. 🛡️ Deduct balance from Firestore `wallets/{currentUser.id}`
       const newBal = Math.max(0, Math.round((wallet.currentBalance - numAmount) * 100) / 100);
       const newWithdrawn = Math.round(((wallet.totalWithdrawn || 0) + numAmount) * 100) / 100;
 
@@ -472,13 +478,20 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         serverTimestamp: serverTimestamp()
       })).catch(() => null);
 
+      // ✅ 5. CRITICAL: Only deduct locally and show success once Firestore writes have fully succeeded!
+      onWithdrawalRequested(numAmount, payoutMethod, targetAccountFormatted, withdrawalRequestId, createdWithdrawalTx);
+      setRequestSuccess(true);
+      setWithdrawAmount(String(minLimit));
+
     } catch (err) {
       console.error('Firestore payout write error:', err);
+      setErrorMsg(language === 'hi'
+        ? 'निकासी अनुरोध फायरबेस में दर्ज नहीं हो सका। कृपया पुनः प्रयास करें।'
+        : 'Failed to submit withdrawal request to Firebase. Please try again.');
+      setRequestSuccess(false);
     } finally {
-      onWithdrawalRequested(numAmount, payoutMethod, targetAccountFormatted, withdrawalRequestId, createdWithdrawalTx);
       setIsSubmitting(false);
       isSubmittingRef.current = false;
-      setRequestSuccess(true);
     }
   };
 
