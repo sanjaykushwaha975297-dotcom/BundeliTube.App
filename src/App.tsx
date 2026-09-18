@@ -1291,6 +1291,8 @@ export default function App() {
       // 4. User profile doc sync for role / approval status and live Wallet sync
       let userUnsub = () => {};
       let walletUnsub = () => {};
+      let withdrawalRequestsUnsub = () => {};
+      let withdrawalsUnsub = () => {};
       if (myUid) {
         userUnsub = onSnapshot(doc(db, 'users', myUid), (userDoc) => {
           if (userDoc.exists()) {
@@ -1358,91 +1360,122 @@ export default function App() {
         }, (err) => console.warn('Wallet doc live sync note:', err));
 
         // Real-time live listener for creator's withdrawal requests status updates (completed / rejected)
-        let withdrawalRequestsUnsub = () => {};
-        try {
-          const wq = query(collection(db, 'withdrawal_requests'), where('creatorUid', '==', myUid));
-          withdrawalRequestsUnsub = onSnapshot(wq, (snap) => {
-            if (!snap.empty) {
-              setWallet(prev => {
-                let changed = false;
-                let refundAmount = 0;
-                const updatedTxs = [...prev.transactions];
+        const processWithdrawalDocs = (docs: any[]) => {
+          setWallet(prev => {
+            let changed = false;
+            let refundAmount = 0;
+            const updatedTxs = [...prev.transactions];
 
-                snap.docs.forEach((d) => {
-                  const data = d.data();
-                  const reqId = d.id;
-                  const reqStatus = data.status; // 'pending' | 'completed' | 'rejected'
-                  // 🛡️ Check if refund was already handled by the server/database
-                  const alreadyRefunded = Boolean(data.refunded || data.refundProcessed || data.isRefunded);
+            docs.forEach((d) => {
+              const data = typeof d.data === 'function' ? d.data() : d;
+              const reqId = d.id || data.id || data.requestId;
+              if (!reqId) return;
 
-                  // 🛡️ Match strictly by canonical request ID or transaction ID
-                  // Prevents multiple consecutive withdrawals of the same amount from colliding
-                  const txIdx = updatedTxs.findIndex(t => 
-                    t.refId === reqId || 
-                    t.id === reqId
-                  );
-                  if (txIdx >= 0) {
-                    const currentTxStatus = updatedTxs[txIdx].status;
-                    if (currentTxStatus !== reqStatus) {
-                      // 🛡️ CRITICAL FIX: Only refund if the server has NOT already refunded it,
-                      // and the current transaction was strictly 'pending'
-                      if (!alreadyRefunded && currentTxStatus === 'pending' && reqStatus === 'rejected') {
-                        // Mark as refunded immediately to prevent any re-trigger or race condition
-                        updateDoc(doc(db, 'withdrawal_requests', reqId), { refunded: true, refundProcessed: true }).catch(() => null);
-                        refundAmount += Number(data.amount || updatedTxs[txIdx].amount || 0);
-                      }
+              const reqStatus = data.status; // 'pending' | 'completed' | 'rejected'
+              // 🛡️ Check if refund was already handled by the server/database
+              const alreadyRefunded = Boolean(data.refunded || data.refundProcessed || data.isRefunded);
 
-                      updatedTxs[txIdx] = {
-                        ...updatedTxs[txIdx],
-                        refId: reqId,
-                        status: reqStatus === 'completed' ? 'completed' : reqStatus === 'rejected' ? 'rejected' : 'pending',
-                        note: reqStatus === 'completed'
-                          ? `✅ एडमिन द्वारा विड्रॉल भुगतान सफल ${data.transactionUtr ? `(UTR: ${data.transactionUtr})` : ''}`
-                          : reqStatus === 'rejected'
-                          ? `❌ विड्रॉल अस्वीकृत (राशि वॉलेट में रिफंड): ${data.rejectionReason || data.reason || 'अस्वीकृत'}`
-                          : updatedTxs[txIdx].note
-                      };
-                      changed = true;
-                    }
+              // 🛡️ Match strictly by canonical request ID or transaction ID
+              // Prevents multiple consecutive withdrawals of the same amount from colliding
+              const txIdx = updatedTxs.findIndex(t => 
+                t.refId === reqId || 
+                t.id === reqId
+              );
+
+              if (txIdx >= 0) {
+                const currentTxStatus = updatedTxs[txIdx].status;
+                if (currentTxStatus !== reqStatus) {
+                  // 🛡️ CRITICAL FIX: Only refund if the server has NOT already refunded it,
+                  // and the current transaction was strictly 'pending'
+                  if (!alreadyRefunded && currentTxStatus === 'pending' && reqStatus === 'rejected') {
+                    // Mark as refunded immediately to prevent any re-trigger or race condition
+                    updateDoc(doc(db, 'withdrawal_requests', reqId), { refunded: true, refundProcessed: true }).catch(() => null);
+                    updateDoc(doc(db, 'withdrawals', reqId), { refunded: true, refundProcessed: true }).catch(() => null);
+                    refundAmount += Number(data.amount || updatedTxs[txIdx].amount || 0);
                   }
-                });
 
-                if (changed) {
-                  // 🛡️ If refund was already processed on the server, DO NOT add refundAmount again!
-                  // Server updates Firestore `wallets/${myUid}` directly, which is listened to by `walletUnsub` above.
-                  if (refundAmount > 0) {
-                    const newCurrentBal = Math.round((prev.currentBalance + refundAmount) * 100) / 100;
-                    const newWithdrawn = Math.max(0, Math.round(((prev.totalWithdrawn || 0) - refundAmount) * 100) / 100);
-
-                    const updatedWallet: CreatorWallet = {
-                      ...prev,
-                      currentBalance: newCurrentBal,
-                      totalWithdrawn: newWithdrawn,
-                      transactions: updatedTxs
-                    };
-                    safeStorage.setJSON('bt_wallet', updatedWallet);
-
-                    // Write to Firestore only for un-refunded manual changes
-                    setDoc(doc(db, 'wallets', myUid), {
-                      currentBalance: newCurrentBal,
-                      totalWithdrawn: newWithdrawn,
-                      transactions: updatedTxs,
-                      updatedAt: new Date().toISOString()
-                    }, { merge: true }).catch(() => {});
-
-                    return updatedWallet;
-                  } else {
-                    // Update only transactions list in local state; do not touch balance!
-                    const updatedWallet: CreatorWallet = {
-                      ...prev,
-                      transactions: updatedTxs
-                    };
-                    safeStorage.setJSON('bt_wallet', updatedWallet);
-                    return updatedWallet;
-                  }
+                  updatedTxs[txIdx] = {
+                    ...updatedTxs[txIdx],
+                    refId: reqId,
+                    status: reqStatus === 'completed' ? 'completed' : reqStatus === 'rejected' ? 'rejected' : 'pending',
+                    note: reqStatus === 'completed'
+                      ? `✅ एडमिन द्वारा विड्रॉल भुगतान सफल ${data.transactionUtr ? `(UTR: ${data.transactionUtr})` : ''}`
+                      : reqStatus === 'rejected'
+                      ? `❌ विड्रॉल अस्वीकृत (राशि वॉलेट में रिफंड): ${data.rejectionReason || data.reason || 'अस्वीकृत'}`
+                      : updatedTxs[txIdx].note
+                  };
+                  changed = true;
                 }
-                return prev;
-              });
+              } else if (reqStatus === 'rejected' && !alreadyRefunded) {
+                // If the transaction is not in local list, but rejected in Firebase, refund the creator immediately!
+                updateDoc(doc(db, 'withdrawal_requests', reqId), { refunded: true, refundProcessed: true }).catch(() => null);
+                updateDoc(doc(db, 'withdrawals', reqId), { refunded: true, refundProcessed: true }).catch(() => null);
+                refundAmount += Number(data.amount || 0);
+                updatedTxs.unshift({
+                  id: `TXN-REF-${reqId.slice(-6)}`,
+                  date: new Date().toLocaleDateString('hi-IN'),
+                  amount: Number(data.amount || 0),
+                  type: 'withdrawal',
+                  status: 'rejected',
+                  payoutMethod: data.paymentMethod || 'Bank Transfer',
+                  targetAccount: data.targetAccount || 'Bank Account',
+                  refId: reqId,
+                  note: `❌ विड्रॉल अस्वीकृत (राशि वॉलेट में रिफंड): ${data.rejectionReason || data.reason || 'अस्वीकृत'}`
+                });
+                changed = true;
+              }
+            });
+
+            if (changed) {
+              // 🛡️ If refund was already processed on the server, DO NOT add refundAmount again!
+              // Server updates Firestore `wallets/${myUid}` directly, which is listened to by `walletUnsub` above.
+              if (refundAmount > 0) {
+                const newCurrentBal = Math.round((prev.currentBalance + refundAmount) * 100) / 100;
+                const newWithdrawn = Math.max(0, Math.round(((prev.totalWithdrawn || 0) - refundAmount) * 100) / 100);
+
+                const updatedWallet: CreatorWallet = {
+                  ...prev,
+                  currentBalance: newCurrentBal,
+                  totalWithdrawn: newWithdrawn,
+                  transactions: updatedTxs
+                };
+                safeStorage.setJSON('bt_wallet', updatedWallet);
+
+                // Write to Firestore only for un-refunded manual changes
+                setDoc(doc(db, 'wallets', myUid), {
+                  currentBalance: newCurrentBal,
+                  totalWithdrawn: newWithdrawn,
+                  transactions: updatedTxs,
+                  updatedAt: new Date().toISOString()
+                }, { merge: true }).catch(() => {});
+
+                return updatedWallet;
+              } else {
+                // Update only transactions list in local state; do not touch balance!
+                const updatedWallet: CreatorWallet = {
+                  ...prev,
+                  transactions: updatedTxs
+                };
+                safeStorage.setJSON('bt_wallet', updatedWallet);
+                return updatedWallet;
+              }
+            }
+            return prev;
+          });
+        };
+
+        try {
+          const wq1 = query(collection(db, 'withdrawal_requests'), where('creatorUid', '==', myUid));
+          withdrawalRequestsUnsub = onSnapshot(wq1, (snap) => {
+            if (!snap.empty) {
+              processWithdrawalDocs(snap.docs);
+            }
+          }, () => {});
+
+          const wq2 = query(collection(db, 'withdrawals'), where('creatorUid', '==', myUid));
+          withdrawalsUnsub = onSnapshot(wq2, (snap) => {
+            if (!snap.empty) {
+              processWithdrawalDocs(snap.docs);
             }
           }, () => {});
         } catch (_) {}
@@ -1553,6 +1586,8 @@ export default function App() {
         vidSubUnsub();
         userUnsub();
         walletUnsub();
+        withdrawalRequestsUnsub();
+        withdrawalsUnsub();
         configUnsub();
         withdrawalSettingsUnsub();
         bannerUnsub();
