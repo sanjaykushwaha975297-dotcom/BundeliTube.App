@@ -1372,6 +1372,8 @@ export default function App() {
                   const data = d.data();
                   const reqId = d.id;
                   const reqStatus = data.status; // 'pending' | 'completed' | 'rejected'
+                  // 🛡️ Check if refund was already handled by the server/database
+                  const alreadyRefunded = Boolean(data.refunded || data.refundProcessed || data.isRefunded);
 
                   const txIdx = updatedTxs.findIndex(t => 
                     t.refId === reqId || 
@@ -1381,8 +1383,11 @@ export default function App() {
                   if (txIdx >= 0) {
                     const currentTxStatus = updatedTxs[txIdx].status;
                     if (currentTxStatus !== reqStatus) {
-                      // 🛡️ If admin rejected a pending withdrawal, refund money back to creator wallet!
-                      if (currentTxStatus === 'pending' && reqStatus === 'rejected') {
+                      // 🛡️ CRITICAL FIX: Only refund if the server has NOT already refunded it,
+                      // and the current transaction was strictly 'pending'
+                      if (!alreadyRefunded && currentTxStatus === 'pending' && reqStatus === 'rejected') {
+                        // Mark as refunded immediately to prevent any re-trigger or race condition
+                        updateDoc(doc(db, 'withdrawal_requests', reqId), { refunded: true, refundProcessed: true }).catch(() => null);
                         refundAmount += Number(data.amount || updatedTxs[txIdx].amount || 0);
                       }
 
@@ -1393,7 +1398,7 @@ export default function App() {
                         note: reqStatus === 'completed'
                           ? `✅ एडमिन द्वारा विड्रॉल भुगतान सफल ${data.transactionUtr ? `(UTR: ${data.transactionUtr})` : ''}`
                           : reqStatus === 'rejected'
-                          ? `❌ विड्रॉल अस्वीकृत (पैसे वॉलेट में वापस जोड़े गए): ${data.rejectionReason || data.reason || 'अस्वीकृत'}`
+                          ? `❌ विड्रॉल अस्वीकृत (राशि वॉलेट में रिफंड): ${data.rejectionReason || data.reason || 'अस्वीकृत'}`
                           : updatedTxs[txIdx].note
                       };
                       changed = true;
@@ -1402,28 +1407,38 @@ export default function App() {
                 });
 
                 if (changed) {
-                  const newCurrentBal = Math.round((prev.currentBalance + refundAmount) * 100) / 100;
-                  const newWithdrawn = Math.max(0, Math.round(((prev.totalWithdrawn || 0) - refundAmount) * 100) / 100);
-
-                  const updatedWallet: CreatorWallet = {
-                    ...prev,
-                    currentBalance: newCurrentBal,
-                    totalWithdrawn: newWithdrawn,
-                    transactions: updatedTxs
-                  };
-                  safeStorage.setJSON('bt_wallet', updatedWallet);
-
-                  // If money was refunded, write immediately to Firestore wallets/{myUid}
+                  // 🛡️ If refund was already processed on the server, DO NOT add refundAmount again!
+                  // Server updates Firestore `wallets/${myUid}` directly, which is listened to by `walletUnsub` above.
                   if (refundAmount > 0) {
+                    const newCurrentBal = Math.round((prev.currentBalance + refundAmount) * 100) / 100;
+                    const newWithdrawn = Math.max(0, Math.round(((prev.totalWithdrawn || 0) - refundAmount) * 100) / 100);
+
+                    const updatedWallet: CreatorWallet = {
+                      ...prev,
+                      currentBalance: newCurrentBal,
+                      totalWithdrawn: newWithdrawn,
+                      transactions: updatedTxs
+                    };
+                    safeStorage.setJSON('bt_wallet', updatedWallet);
+
+                    // Write to Firestore only for un-refunded manual changes
                     setDoc(doc(db, 'wallets', myUid), {
                       currentBalance: newCurrentBal,
                       totalWithdrawn: newWithdrawn,
                       transactions: updatedTxs,
                       updatedAt: new Date().toISOString()
                     }, { merge: true }).catch(() => {});
-                  }
 
-                  return updatedWallet;
+                    return updatedWallet;
+                  } else {
+                    // Update only transactions list in local state; do not touch balance!
+                    const updatedWallet: CreatorWallet = {
+                      ...prev,
+                      transactions: updatedTxs
+                    };
+                    safeStorage.setJSON('bt_wallet', updatedWallet);
+                    return updatedWallet;
+                  }
                 }
                 return prev;
               });
