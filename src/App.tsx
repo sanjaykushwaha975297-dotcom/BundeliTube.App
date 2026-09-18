@@ -1375,10 +1375,11 @@ export default function App() {
                   // 🛡️ Check if refund was already handled by the server/database
                   const alreadyRefunded = Boolean(data.refunded || data.refundProcessed || data.isRefunded);
 
+                  // 🛡️ Match strictly by canonical request ID or transaction ID
+                  // Prevents multiple consecutive withdrawals of the same amount from colliding
                   const txIdx = updatedTxs.findIndex(t => 
                     t.refId === reqId || 
-                    t.id === reqId || 
-                    (t.type === 'withdrawal' && Math.abs(t.amount - Number(data.amount)) < 0.01 && t.status === 'pending')
+                    t.id === reqId
                   );
                   if (txIdx >= 0) {
                     const currentTxStatus = updatedTxs[txIdx].status;
@@ -2918,16 +2919,6 @@ export default function App() {
         return prev;
       }
 
-      // Check if another pending withdrawal transaction with same amount was added recently
-      const hasRecentPending = prev.transactions.some(t => 
-        t.type === 'withdrawal' && 
-        t.status === 'pending' && 
-        t.amount === amount && 
-        (t.refId === requestId || (!requestId && t.targetAccount === target))
-      );
-      if (hasRecentPending) {
-        return prev;
-      }
 
       const txToAdd = createdTx || {
         id: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
