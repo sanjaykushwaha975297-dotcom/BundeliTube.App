@@ -34,7 +34,9 @@ import {
   LayoutGrid,
   Video as VideoIcon,
   Clock,
-  PlusCircle
+  PlusCircle,
+  Info,
+  DollarSign
 } from 'lucide-react';
 import { UserAccount, Channel, AppNotification } from '../types';
 import { BundeliLogo } from './BundeliLogo';
@@ -73,6 +75,8 @@ interface HeaderProps {
   onToggleLanguage: () => void;
   onToggleNotifications?: () => void;
   onNavigateHome?: () => void;
+  onNavigateAbout?: () => void;
+  onNavigateCreatorProgram?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -107,6 +111,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleLanguage,
   onToggleNotifications,
   onNavigateHome,
+  onNavigateAbout,
+  onNavigateCreatorProgram,
 }) => {
   const t = translations[language];
   const [showThreeDotMenu, setShowThreeDotMenu] = useState(false);
@@ -582,6 +588,36 @@ export const Header: React.FC<HeaderProps> = ({
                             <span>{language === 'hi' ? 'मदद व सहायता' : 'Help & Support'}</span>
                           </button>
                         )}
+
+                        {/* About Us */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowProfileMenu(false);
+                            if (onNavigateAbout) onNavigateAbout();
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl ${
+                            isLight ? 'text-slate-700 hover:bg-slate-100 hover:text-amber-600' : 'text-slate-200 hover:bg-slate-800 hover:text-amber-400'
+                          } transition text-left`}
+                        >
+                          <Info className="w-4 h-4 text-amber-500" />
+                          <span>{language === 'hi' ? 'हमारे बारे में (About Us)' : 'About BundeliTube'}</span>
+                        </button>
+
+                        {/* 50/50 Creator Program */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowProfileMenu(false);
+                            if (onNavigateCreatorProgram) onNavigateCreatorProgram();
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl ${
+                            isLight ? 'text-slate-700 hover:bg-slate-100 hover:text-emerald-600' : 'text-slate-200 hover:bg-slate-800 hover:text-emerald-400'
+                          } transition text-left`}
+                        >
+                          <DollarSign className="w-4 h-4 text-emerald-500" />
+                          <span className="font-semibold">{language === 'hi' ? '50-50 कमाई कार्यक्रम (How it Works)' : '50/50 Creator Program'}</span>
+                        </button>
 
                         {/* Policies & Legal */}
                         {onOpenPolicies && (

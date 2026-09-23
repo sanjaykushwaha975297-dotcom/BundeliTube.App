@@ -33,7 +33,8 @@ export type PolicyTab =
   | 'invalid_traffic' 
   | 'terms' 
   | 'copyright' 
-  | 'grievance';
+  | 'grievance'
+  | 'disclaimer';
 
 interface PolicyCenterProps {
   isOpen?: boolean;
@@ -133,6 +134,17 @@ export const PolicyCenterModal: React.FC<PolicyCenterProps> = ({
       badgeHi: 'IT नियम 2021',
       badgeEn: 'IT Rules 2021 (India)',
       badgeColor: 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/30'
+    },
+    {
+      id: 'disclaimer' as PolicyTab,
+      labelHi: 'अस्वीकरण व कानूनी घोषणा (Disclaimer)',
+      labelEn: 'Disclaimer & Liability Policy',
+      shortLabelHi: 'अस्वीकरण',
+      shortLabelEn: 'Disclaimer',
+      icon: Scale,
+      badgeHi: 'कानूनी सुरक्षा',
+      badgeEn: 'Legal Safe Harbor',
+      badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
     }
   ], []);
 
@@ -877,6 +889,69 @@ export const PolicyCenterModal: React.FC<PolicyCenterProps> = ({
                   <p className="text-[11px]">
                     3. आईटी नियम 2021 के अनुसार अधिकतम १५ कार्यदिवसों के भीतर उचित जांच कर पूर्ण समाधान किया जाएगा।
                   </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB 7: DISCLAIMER & LIABILITY (अस्वीकरण)                  */}
+          {/* ========================================================= */}
+          {activeTab === 'disclaimer' && (
+            <div className="space-y-6">
+              <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-4">
+                <div className="w-11 h-11 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
+                  <Scale className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                    <span>{docLanguage === 'hi' ? 'कानूनी अस्वीकरण व दायित्व सीमा (Disclaimer)' : 'Legal Disclaimer & Limitation of Liability'}</span>
+                  </h3>
+                  <p className="text-xs text-slate-700 dark:text-slate-300">
+                    {docLanguage === 'hi'
+                      ? 'बुन्देली ट्यूब (BundeliTube) पर उपलब्ध सभी वीडियो, ऑडियो एवं सामग्री की कानूनी स्थिति व डिस्क्लेमर।'
+                      : 'Legal disclosures, intermediary liability, and third-party content disclaimer.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className={`p-5 sm:p-6 rounded-2xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'} space-y-4`}>
+                <div className="space-y-3 text-xs sm:text-[13px] text-slate-700 dark:text-slate-300">
+                  <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <span className="font-bold text-slate-900 dark:text-slate-100 text-xs block">
+                      1. डिजिटल मध्यस्थ संरक्षण (Intermediary Safe Harbor under IT Act 2000):
+                    </span>
+                    <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
+                      बुन्देली ट्यूब भारत के सूचना प्रौद्योगिकी अधिनियम, 2000 की धारा 79 के तहत एक पंजीकृत डिजिटल मध्यस्थ (Intermediary) है। प्लेटफ़ॉर्म पर प्रदर्शित वीडियो स्वतंत्र रचनाकारों, गायकों और चैनलों द्वारा अपलोड किए जाते हैं। उपयोगकर्ता द्वारा अपलोड की गई किसी भी सामग्री की सत्यता या उसके द्वारा किसी तीसरे पक्ष के अधिकारों के उल्लंघन के लिए प्लेटफ़ॉर्म प्रत्यक्ष रूप से उत्तरदायी नहीं है।
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <span className="font-bold text-slate-900 dark:text-slate-100 text-xs block">
+                      2. लोक-कला व सांस्कृतिक संरक्षण (Folk Art Preservation & Fair Use):
+                    </span>
+                    <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
+                      बुंदेलखंड के पारंपरिक लोकगीत (जैसे ईसुरी की चौकड़ियां, आल्हा, फाग, दिवारी) सदियों पुरानी मौखिक लोक-परंपरा का हिस्सा हैं। इनका प्रसारण सांस्कृतिक संवर्धन और लोक-कलाकारों के आर्थिक उत्थान के उद्देश्य से किया जाता है।
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <span className="font-bold text-slate-900 dark:text-slate-100 text-xs block">
+                      3. विज्ञापन एवं बाहरी लिंक अस्वीकरण (Ads & External Links Disclaimer):
+                    </span>
+                    <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
+                      वेबसाइट अथवा ऐप पर Google AdSense / Google AdMob द्वारा प्रदर्शित विज्ञापनों में दी गई सेवाओं या उत्पादों की गुणवत्ता की गारंटी बुन्देली ट्यूब नहीं लेता। विज्ञापनों पर क्लिक करके बाहरी साइट पर जाने पर उन साइट्स की अपनी नीतियां लागू होंगी।
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <span className="font-bold text-slate-900 dark:text-slate-100 text-xs block">
+                      4. कमाई व पेआउट अस्वीकरण (Earnings Disclosure):
+                    </span>
+                    <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">
+                      क्रिएटर की कमाई केवल Google AdSense/AdMob द्वारा सत्यापित वैध विज्ञापनों और व्यूज पर आधारित होती है। किसी भी अमान्य क्लिक, बॉट ट्रैफ़िक या नीति उल्लंघन पर कमाई जब्त करने व चैनल हटाने का अधिकार प्लेटफ़ॉर्म सुरक्षित रखता है।
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

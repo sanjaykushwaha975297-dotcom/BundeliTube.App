@@ -96,13 +96,61 @@ export function getExternalAdminPortalHtml(host: string): string {
 
     <div class="nav-tabs">
       <button class="tab-btn active" onclick="switchTab('distribute')">⚡ 1. विज्ञापन आय वितरण (Ad Payout)</button>
-      <button class="tab-btn" onclick="switchTab('applications')">📋 2. लंबित चैनल व पैन सत्यापन (Pending KYC)</button>
-      <button class="tab-btn" onclick="switchTab('partners')">👑 3. पार्टनर प्रोग्राम चैनल्स (BPP Channels)</button>
-      <button class="tab-btn" onclick="switchTab('users')">👥 4. साधारण दर्शक (Normal Users)</button>
-      <button class="tab-btn" onclick="switchTab('withdrawal')">💳 5. विड्रॉल अनुरोध व बैंक खाते (Withdrawal Requests)</button>
-      <button class="tab-btn" onclick="switchTab('history')">📜 6. वितरण इतिहास (History)</button>
-      <button class="tab-btn" onclick="switchTab('admob-status')">📱 7. AdMob आईडी व स्थिति (AdMob Setup)</button>
-      <button class="tab-btn" onclick="switchTab('api-code')">💻 8. आपकी वेबसाइट का कोड (API / Code)</button>
+      <button class="tab-btn" onclick="switchTab('videos')">🎬 2. वीडियो मॉडरेशन (Video Approvals) <span id="pending-videos-count" class="badge badge-amber" style="margin-left:4px; font-size:11px;">0 पेंडिंग</span></button>
+      <button class="tab-btn" onclick="switchTab('applications')">📋 3. लंबित चैनल व पैन सत्यापन (Pending KYC)</button>
+      <button class="tab-btn" onclick="switchTab('partners')">👑 4. पार्टनर प्रोग्राम चैनल्स (BPP Channels)</button>
+      <button class="tab-btn" onclick="switchTab('users')">👥 5. साधारण दर्शक (Normal Users)</button>
+      <button class="tab-btn" onclick="switchTab('withdrawal')">💳 6. विड्रॉल अनुरोध व बैंक खाते (Withdrawal Requests)</button>
+      <button class="tab-btn" onclick="switchTab('history')">📜 7. वितरण इतिहास (History)</button>
+      <button class="tab-btn" onclick="switchTab('admob-status')">📱 8. AdMob आईडी व स्थिति (AdMob Setup)</button>
+      <button class="tab-btn" onclick="switchTab('api-code')">💻 9. आपकी वेबसाइट का कोड (API / Code)</button>
+    </div>
+
+    <!-- TAB: VIDEOS MODERATION & APPROVALS -->
+    <div id="tab-videos" class="tab-content">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div>
+            <h2>🎬 वीडियो मॉडरेशन व सार्वजनिक अप्रूवल (Video Approvals & Live Publishing)</h2>
+            <p style="font-size:13px; color:#94a3b8; margin:0;">
+              जब भी कोई क्रिएटर ऐप या वेबसाइट से वीडियो या शॉर्ट्स अपलोड करता है, वह यहाँ <strong>पेंडिंग (समीक्षाधीन)</strong> स्थिति में आता है। जब आप यहाँ <strong>'✅ स्वीकृत करें'</strong> पर क्लिक करेंगे, तभी वह वीडियो स्वीकृत होकर मुख्य पेज (Home Feed) पर लाइव प्रदर्शित होगा।
+            </p>
+          </div>
+          <button class="btn" style="padding:8px 14px; font-size:13px;" onclick="loadAdminVideos()">🔄 वीडियो रिफ्रेश करें</button>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div class="chips" style="margin-bottom:0;">
+            <span class="chip active" id="filter-vid-all" onclick="filterAdminVideos('all')">सभी वीडियो</span>
+            <span class="chip" id="filter-vid-pending" onclick="filterAdminVideos('pending')">⏳ केवल पेंडिंग (समीक्षाधीन)</span>
+            <span class="chip" id="filter-vid-approved" onclick="filterAdminVideos('approved')">✅ स्वीकृत व लाइव</span>
+            <span class="chip" id="filter-vid-rejected" onclick="filterAdminVideos('rejected')">❌ अस्वीकृत</span>
+          </div>
+          <div style="min-width:240px;">
+            <input type="text" id="videoSearchInput" placeholder="🔍 शीर्षक या चैनल से खोजें..." oninput="searchAdminVideos()" style="margin-bottom:0;">
+          </div>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px;">थंबनेल</th>
+                <th>वीडियो विवरण व लिंक</th>
+                <th>चैनल व कलाकार</th>
+                <th>श्रेणी / प्रकार</th>
+                <th>ओनरशिप कोड</th>
+                <th>अपलोड समय</th>
+                <th>स्थिति (Status)</th>
+                <th style="text-align:center; min-width:180px;">कार्रवाई (Action)</th>
+              </tr>
+            </thead>
+            <tbody id="adminVideosTableBody">
+              <tr><td colspan="8" style="text-align:center; padding:24px;">वीडियो लोड हो रहे हैं...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- TAB 1: DISTRIBUTE -->
@@ -603,12 +651,15 @@ async function approveChannel(channelId) {
 
   <script>
     let creatorsList = [];
+    let allAdminVideos = [];
+    let currentVideoFilter = 'all';
 
     function switchTab(tabId) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       event.target.classList.add('active');
       document.getElementById('tab-' + tabId).classList.add('active');
+      if (tabId === 'videos') loadAdminVideos();
       if (tabId === 'history') loadHistory();
       if (tabId === 'withdrawal') loadWithdrawalRequests();
       if (tabId === 'applications' || tabId === 'partners' || tabId === 'users') loadApplicationsAndUsers();
@@ -1129,8 +1180,182 @@ async function approveChannel(channelId) {
       }
     }
 
+    // ==================== VIDEO MODERATION FUNCTIONS ====================
+    async function loadAdminVideos() {
+      const tbody = document.getElementById('adminVideosTableBody');
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px;">वीडियो लोड हो रहे हैं...</td></tr>';
+
+      try {
+        const res = await fetch('/api/admin/videos');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.videos)) {
+          allAdminVideos = data.videos;
+          const pendingCount = data.pendingCount || data.videos.filter(v => v.status === 'pending').length;
+          document.getElementById('pending-videos-count').textContent = pendingCount + ' पेंडिंग';
+          renderAdminVideos();
+        } else {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#f87171; padding:20px;">वीडियो लोड करने में त्रुटि: ' + (data.error || 'अज्ञात') + '</td></tr>';
+        }
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#f87171; padding:20px;">सर्वर से वीडियो लोड करने में त्रुटि: ' + err.message + '</td></tr>';
+      }
+    }
+
+    function filterAdminVideos(filterType) {
+      currentVideoFilter = filterType;
+      document.querySelectorAll('#tab-videos .chip').forEach(c => c.classList.remove('active'));
+      const activeChip = document.getElementById('filter-vid-' + filterType);
+      if (activeChip) activeChip.classList.add('active');
+      renderAdminVideos();
+    }
+
+    function searchAdminVideos() {
+      renderAdminVideos();
+    }
+
+    function renderAdminVideos() {
+      const tbody = document.getElementById('adminVideosTableBody');
+      const searchQuery = (document.getElementById('videoSearchInput')?.value || '').toLowerCase().trim();
+
+      let filtered = allAdminVideos.filter(v => {
+        if (currentVideoFilter === 'pending') return v.status === 'pending';
+        if (currentVideoFilter === 'approved') return v.status === 'approved' || v.status === 'published';
+        if (currentVideoFilter === 'rejected') return v.status === 'rejected';
+        return true;
+      });
+
+      if (searchQuery) {
+        filtered = filtered.filter(v => 
+          (v.title || '').toLowerCase().includes(searchQuery) ||
+          (v.channelName || '').toLowerCase().includes(searchQuery) ||
+          (v.artist || '').toLowerCase().includes(searchQuery) ||
+          (v.category || '').toLowerCase().includes(searchQuery) ||
+          (v.verificationCode || '').toLowerCase().includes(searchQuery)
+        );
+      }
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:#94a3b8;">कोई वीडियो नहीं मिला।</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = '';
+      filtered.forEach(vid => {
+        const tr = document.createElement('tr');
+        const isPending = vid.status === 'pending';
+        const isApproved = vid.status === 'approved' || vid.status === 'published';
+        const isRejected = vid.status === 'rejected';
+
+        let statusBadge = '<span class="badge badge-amber">⏳ समीक्षाधीन (Pending)</span>';
+        if (isApproved) statusBadge = '<span class="badge badge-green">✅ लाइव (Approved)</span>';
+        if (isRejected) statusBadge = '<span class="badge badge-red">❌ अस्वीकृत (Rejected)</span>';
+
+        const safeTitle = (vid.title || 'शीर्षक रहित').replace(/"/g, '&quot;').replace(/'/g, "\\'");
+        const safeId = (vid.id || '').replace(/'/g, "\\'");
+        const thumbUrl = vid.thumbnailUrl || (vid.youtubeId ? 'https://img.youtube.com/vi/' + vid.youtubeId + '/hqdefault.jpg' : 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=400');
+        const watchUrl = vid.youtubeUrl || (vid.youtubeId ? 'https://www.youtube.com/watch?v=' + vid.youtubeId : '#');
+
+        tr.innerHTML = \`
+          <td>
+            <a href="\${watchUrl}" target="_blank" title="क्लिक करके YouTube पर देखें">
+              <img src="\${thumbUrl}" style="width:96px; height:54px; object-fit:cover; border-radius:6px; border:1px solid #475569;">
+            </a>
+          </td>
+          <td>
+            <div style="font-weight:700; color:#f8fafc; font-size:13px; max-width:280px; line-height:1.4;">\${vid.title || 'शीर्षक रहित'}</div>
+            <div style="font-size:11px; color:#38bdf8; margin-top:3px; display:flex; align-items:center; gap:6px;">
+              <a href="\${watchUrl}" target="_blank" style="color:#38bdf8; text-decoration:none;">▶ YouTube वीडियो देखें</a>
+              <span>•</span>
+              <span style="color:#94a3b8;">ID: \${vid.id}</span>
+            </div>
+            \${vid.rejectionReason ? '<div style="font-size:11px; color:#f87171; margin-top:2px;">अस्वीकृति कारण: ' + vid.rejectionReason + '</div>' : ''}
+          </td>
+          <td>
+            <div style="font-weight:600; color:#e2e8f0;">\${vid.channelName || 'बुन्देली क्रिएटर'}</div>
+            \${vid.artist ? '<div style="font-size:11px; color:#94a3b8;">कलाकार: ' + vid.artist + '</div>' : ''}
+          </td>
+          <td>
+            <span class="badge badge-blue">\${vid.isShort ? '⚡ शॉर्ट्स' : '🎬 ' + (vid.category || 'लोकगीत')}</span>
+            \${vid.duration ? '<div style="font-size:11px; color:#94a3b8; margin-top:3px;">⏱ ' + vid.duration + '</div>' : ''}
+          </td>
+          <td>
+            <code style="background:#0f172a; padding:3px 6px; border-radius:4px; font-size:11px; color:#fbbf24; border:1px solid #475569;">\${vid.verificationCode || 'N/A'}</code>
+          </td>
+          <td style="font-size:12px; color:#94a3b8;">
+            \${vid.createdAt ? new Date(vid.createdAt).toLocaleDateString('hi-IN') : 'N/A'}
+          </td>
+          <td>
+            \${statusBadge}
+          </td>
+          <td style="text-align:center;">
+            <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+              \${!isApproved ? \`
+                <button class="btn btn-green" style="padding:6px 12px; font-size:12px;" onclick="approveAdminVideo('\${safeId}', '\${safeTitle}')">
+                  ✅ स्वीकृत करें (Live)
+                </button>
+              \` : \`
+                <span style="font-size:12px; color:#34d399; font-weight:600;">✓ लाइव है</span>
+              \`}
+              \${!isRejected ? \`
+                <button class="btn btn-red" style="padding:6px 10px; font-size:12px;" onclick="rejectAdminVideo('\${safeId}', '\${safeTitle}')">
+                  ❌ अस्वीकार
+                </button>
+              \` : ''}
+            </div>
+          </td>
+        \`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function approveAdminVideo(videoId, title) {
+      if (!confirm(\`क्या आप वीडियो "\${title}" को स्वीकृत करके बुन्देलीट्यूब के मुख्य पेज (Home Feed) पर लाइव प्रकाशित करना चाहते हैं?\`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/admin/videos/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert(\`✅ वीडियो "\${title}" सफलतापूर्वक स्वीकृत हो गया है और मुख्य पेज (होम फ़ीड) पर लाइव हो गया है!\`, true);
+          loadAdminVideos();
+        } else {
+          showAlert('स्वीकृति में त्रुटि: ' + (data.error || data.message || 'अज्ञात त्रुटि'), false);
+        }
+      } catch (err) {
+        showAlert('त्रुटि: ' + err.message, false);
+      }
+    }
+
+    async function rejectAdminVideo(videoId, title) {
+      const reason = prompt(\`वीडियो "\${title}" को अस्वीकार करने का कारण दर्ज करें:\`, 'सामग्री दिशा-निर्देशों के अनुरूप नहीं है');
+      if (reason === null) return;
+
+      try {
+        const res = await fetch('/api/admin/videos/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId, reason })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert(\`वीडियो "\${title}" अस्वीकृत कर दिया गया है।\`, true);
+          loadAdminVideos();
+        } else {
+          showAlert('अस्वीकृति में त्रुटि: ' + (data.error || data.message || 'अज्ञात त्रुटि'), false);
+        }
+      } catch (err) {
+        showAlert('त्रुटि: ' + err.message, false);
+      }
+    }
+
     // Initial load
     loadCreators();
+    loadAdminVideos();
     loadWithdrawalRequests();
   </script>
 </body>

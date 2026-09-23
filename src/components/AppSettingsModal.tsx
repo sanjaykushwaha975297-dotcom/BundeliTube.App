@@ -717,7 +717,7 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
 
           {/* TAB 6: About */}
           {activeTab === 'about' && (
-            <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center space-y-3">
+            <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center space-y-4">
               <span className="font-black text-xl bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">
                 BundeliTube v2.6.0
               </span>
@@ -726,6 +726,30 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                   ? 'बुंदेलखंड की माटी, संगीत, लोककला, राई और आल्हा को समर्पित भारत का पहला डिजिटल वीडियो एवं क्रिएटर मंच।'
                   : 'India\'s premier digital platform celebrating Bundelkhand folk heritage, Rai, Alha, Faag, and creator economy.'}
               </p>
+              
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    if (onOpenPolicies) onOpenPolicies('bundelitube');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 text-xs font-bold transition"
+                >
+                  {language === 'hi' ? '📜 50/50 क्रिएटर नीति' : '📜 50/50 Creator Policy'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    if (onOpenPolicies) onOpenPolicies('admob_adsense');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-bold transition"
+                >
+                  {language === 'hi' ? '🛡️ AdSense गोपनीयता नीति' : '🛡️ AdSense Privacy'}
+                </button>
+              </div>
+
               <div className="pt-2 text-[11px] text-slate-500 dark:text-slate-400">
                 Made with ❤️ in Bundelkhand • All Rights Reserved 2026
               </div>

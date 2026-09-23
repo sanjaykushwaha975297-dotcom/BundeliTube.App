@@ -59,6 +59,9 @@ import { ChannelPendingModal } from './components/ChannelPendingModal';
 import { DynamicBannerSlider } from './components/DynamicBannerSlider';
 import { AdMobNativeCard } from './components/AdMobNativeCard';
 import { TopBannerAd } from './components/TopBannerAd';
+import { AboutView } from './components/AboutView';
+import { CreatorProgramView } from './components/CreatorProgramView';
+import { SimpleFooter } from './components/SimpleFooter';
 import { MiniPlayer } from './components/MiniPlayer';
 import { BottomNav } from './components/BottomNav';
 import { Language, translations } from './locales/i18n';
@@ -269,6 +272,10 @@ export default function App() {
       });
       baseList = validVideos;
     }
+    // Fall back to authentic curated INITIAL_VIDEOS so the platform is never blank on initial load
+    if (baseList.length === 0 && Array.isArray(INITIAL_VIDEOS) && INITIAL_VIDEOS.length > 0) {
+      baseList = INITIAL_VIDEOS;
+    }
     const cachedChannel = safeStorage.getJSON<Channel>('bt_channel', null);
     const cachedSubs = safeStorage.getJSON<ChannelSubmission[]>('bt_channel_submissions', []);
     const { harmonizedVideos } = harmonizeVideoAvatars(baseList, cachedChannel, cachedSubs);
@@ -455,8 +462,37 @@ export default function App() {
     if (tab) {
       setPolicyActiveTab(tab as PolicyTab);
     }
+    // Also navigate to policies view in-app so full content is visible immediately
+    setCurrentView('policies');
     setIsPolicyModalOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // Google AdSense & SEO Deep Link Path Routing (/privacy-policy, /terms, /about, /creator-program, /contact, /disclaimer)
+  useEffect(() => {
+    try {
+      const pathname = window.location.pathname.toLowerCase();
+      if (pathname.includes('privacy')) {
+        setPolicyActiveTab('admob_adsense');
+        setCurrentView('policies');
+      } else if (pathname.includes('terms')) {
+        setPolicyActiveTab('terms');
+        setCurrentView('policies');
+      } else if (pathname.includes('creator') || pathname.includes('monetization')) {
+        setPolicyActiveTab('bundelitube');
+        setCurrentView('policies');
+      } else if (pathname.includes('about')) {
+        setPolicyActiveTab('bundelitube');
+        setCurrentView('policies');
+      } else if (pathname.includes('contact') || pathname.includes('grievance')) {
+        setPolicyActiveTab('grievance');
+        setCurrentView('policies');
+      } else if (pathname.includes('copyright') || pathname.includes('dmca')) {
+        setPolicyActiveTab('copyright');
+        setCurrentView('policies');
+      }
+    } catch (_) {}
+  }, []);
 
   // Persistence Effects
   useEffect(() => {
@@ -1121,7 +1157,7 @@ export default function App() {
       const myEmail = authUser?.email || currentUser?.email;
       
       // 1. Videos sync (strictly published and approved videos)
-      const videosQuery = query(collection(db, 'videos'), orderBy('uploadDate', 'desc'));
+      const videosQuery = query(collection(db, 'videos'));
       const vidUnsub = onSnapshot(videosQuery, (snapshot) => {
         if (!snapshot.empty) {
           const fetchedVideos: Video[] = [];
@@ -1147,6 +1183,10 @@ export default function App() {
               return;
             }
 
+            const rawDate = data.uploadDate || '';
+            const isPendingText = rawDate.includes('Review') || rawDate.includes('समीक्षा');
+            const cleanUploadDate = isPendingText ? (language === 'hi' ? 'हाल ही में' : 'Recently') : (rawDate || (language === 'hi' ? 'हाल ही में' : 'Recently'));
+
             fetchedVideos.push({
               id: docSnap.id,
               title: data.title || '',
@@ -1154,7 +1194,7 @@ export default function App() {
               category: data.category || 'lokgeet',
               views: Number(data.views || 0),
               likes: Number(data.likes || 0),
-              uploadDate: data.uploadDate || '2026',
+              uploadDate: cleanUploadDate,
               duration: data.duration || '4:15',
               thumbnail: data.thumbnail || data.thumbnailUrl || '',
               youtubeId: data.youtubeId || '',
@@ -1176,6 +1216,14 @@ export default function App() {
               status: vidStatus
             });
           });
+
+          // Sort by timestamp descending so newly uploaded videos are ALWAYS at the top
+          fetchedVideos.sort((a, b) => {
+            const numA = parseInt(a.id.replace(/\D/g, '')) || 0;
+            const numB = parseInt(b.id.replace(/\D/g, '')) || 0;
+            return numB - numA;
+          });
+
           if (fetchedVideos.length > 0) {
             const { harmonizedVideos } = harmonizeVideoAvatars(fetchedVideos, channel, channelSubmissions);
             setVideos(harmonizedVideos);
@@ -1198,12 +1246,18 @@ export default function App() {
               });
             }
           } else {
-            setVideos([]);
-            safeStorage.setJSON('bt_videos', []);
+            // Keep curated INITIAL_VIDEOS if fetched list is empty
+            if (INITIAL_VIDEOS && INITIAL_VIDEOS.length > 0) {
+              setVideos(INITIAL_VIDEOS);
+              safeStorage.setJSON('bt_videos', INITIAL_VIDEOS);
+            }
           }
         } else {
-          setVideos([]);
-          safeStorage.setJSON('bt_videos', []);
+          // Keep curated INITIAL_VIDEOS if snapshot is empty
+          if (INITIAL_VIDEOS && INITIAL_VIDEOS.length > 0) {
+            setVideos(INITIAL_VIDEOS);
+            safeStorage.setJSON('bt_videos', INITIAL_VIDEOS);
+          }
         }
       }, (err) => {
         console.warn('Firestore live video sync notice:', err);
@@ -2537,7 +2591,7 @@ export default function App() {
   const handleUploadSuccess = (newVideo: Video) => {
     const isShort = Boolean(newVideo.isShort || newVideo.videoType === 'short' || newVideo.category === 'shorts');
     
-    // 1. Submit with pending status for Admin moderation workflow
+    // 1. Strictly submit with 'pending' status for Admin moderation workflow
     const pendingVideo: Video = {
       ...newVideo,
       status: 'pending',
@@ -2546,11 +2600,10 @@ export default function App() {
       uploadDate: language === 'hi' ? 'समीक्षाधीन (Pending Review)' : 'Under Review'
     };
 
-    // Note: Video is NOT added to public `videos` state until Admin approves it.
-    // In Creator Studio, `creatorVideos` automatically reads from `videoSubmissions`
-    // so the creator can see their pending video with verification status.
+    // Note: Video is NOT added to public `videos` state until Admin approves it from Admin Panel website!
+    // In Creator Studio, `creatorVideos` reads from `videoSubmissions` so the creator can see their pending video.
 
-    // 2. Add to videoSubmissions state for Admin Portal review
+    // 2. Add to videoSubmissions state for Creator Studio & Admin review
     const submissionItem: VideoSubmission = {
       id: pendingVideo.id,
       creatorUid: currentUser?.id || 'user',
@@ -2582,41 +2635,17 @@ export default function App() {
       return updatedSubs;
     });
 
-    // If it's a short, immediately make it available in the shorts feed
-    if (isShort) {
-      const newShort = convertToShortItem(newVideo) || convertToShortItem(submissionItem) || {
-        id: pendingVideo.id,
-        title: pendingVideo.title,
-        videoUrl: pendingVideo.youtubeUrl || (pendingVideo.youtubeId ? `https://www.youtube.com/shorts/${pendingVideo.youtubeId}` : (pendingVideo.streamUrl || '')),
-        youtubeId: pendingVideo.youtubeId || pendingVideo.id,
-        thumbnail: pendingVideo.thumbnail,
-        channelName: channel.name || pendingVideo.channelName,
-        channelAvatar: channel.avatar || pendingVideo.channelAvatar,
-        likes: 0,
-        commentsCount: 0,
-        soundTitle: `${pendingVideo.artist || channel.name} - Original Audio`,
-        views: 0
-      };
-      setShorts(prev => {
-        const filtered = prev.filter(s => s.id !== newShort.id && s.youtubeId !== newShort.youtubeId);
-        const updated = [newShort, ...filtered];
-        safeStorage.setJSON('bt_shorts_custom', updated);
-        return updated;
-      });
-    }
-
-    // Also persist submission in Firestore video_submissions and videos for external admin website
+    // 3. Persist in Firestore 'video_submissions' and 'videos' collections with status: 'pending'
     try {
       const db = getFirestoreSafe();
       if (db) {
-        // 1. Save in video_submissions collection
         setDoc(doc(db, 'video_submissions', pendingVideo.id), cleanFirestoreData({
           ...submissionItem,
+          status: 'pending',
           submittedAt: serverTimestamp(),
           serverTimestamp: serverTimestamp()
         }), { merge: true }).catch(err => console.warn('Firestore video submission write note:', err));
 
-        // 2. Also save into videos collection with status: 'pending' so external admin website can query either collection
         setDoc(doc(db, 'videos', pendingVideo.id), cleanFirestoreData({
           ...pendingVideo,
           status: 'pending',
@@ -2636,29 +2665,25 @@ export default function App() {
       return updatedChan;
     });
 
-    // 5. Notify creator that video or short is submitted for admin review
+    // 5. Notify creator that video is pending admin review
     const notif: AppNotification = {
-      id: `notif-upload-pending-${Date.now()}`,
+      id: `notif-upload-${Date.now()}`,
       title: isShort
         ? (language === 'hi' ? '⏳ शॉर्ट्स समीक्षाधीन है (Under Review)' : '⏳ Short Under Review')
         : (language === 'hi' ? '⏳ वीडियो समीक्षाधीन है (Under Review)' : '⏳ Video Under Review'),
       description: isShort
         ? (language === 'hi'
-            ? `आपकी शॉर्ट्स "${newVideo.title}" व्यवस्थापक (Admin) समीक्षा के लिए सबमिट हो गई है। एडमिन द्वारा स्वीकृति के बाद ही यह शॉर्ट्स फ़ीड में लाइव होगी।`
+            ? `आपकी शॉर्ट्स "${newVideo.title}" व्यवस्थापक (Admin) समीक्षा के लिए सबमिट हो गई है। एडमिन द्वारा अपनी एडमिन वेबसाइट से अप्रूवल के बाद ही यह शॉर्ट्स फ़ीड में लाइव होगी।`
             : `Your Short "${newVideo.title}" is under Admin review and will appear in the Shorts Feed once approved.`)
         : (language === 'hi'
-            ? `आपकी वीडियो "${newVideo.title}" व्यवस्थापक (Admin) सत्यापन के लिए सबमिट हो गई है। एडमिन द्वारा अप्रूवल के बाद यह लाइव फ़ीड में प्रदर्शित होगी।`
-            : `Your video "${newVideo.title}" is under Admin review and will be published once approved.`),
+            ? `आपकी वीडियो "${newVideo.title}" व्यवस्थापक (Admin) सत्यापन के लिए सबमिट हो गई है। एडमिन द्वारा अपनी एडमिन वेबसाइट से अप्रूवल के बाद ही यह मेन पेज पर लाइव होगी।`
+            : `Your video "${newVideo.title}" is under Admin review and will be published to the main page once approved.`),
       timestamp: 'अभी-अभी',
       isRead: false,
       type: 'upload',
       targetVideoId: pendingVideo.id
     };
     setNotifications(prev => [notif, ...prev]);
-
-    // 6. Shorts and standard videos follow the strict admin review protocol:
-    // They are NEVER automatically published to public videos or the public Shorts feed before admin approval.
-    // The creator can track the pending review status in Creator Studio.
   };
 
   const handleApproveVideoSubmission = (submissionId: string) => {
@@ -3250,6 +3275,16 @@ export default function App() {
               setCurrentView('home');
               setSearchQuery('');
             }}
+            onNavigateAbout={() => {
+              setSelectedVideo(null);
+              setCurrentView('about');
+              setSearchQuery('');
+            }}
+            onNavigateCreatorProgram={() => {
+              setSelectedVideo(null);
+              setCurrentView('creator_program');
+              setSearchQuery('');
+            }}
           />
         </div>
 
@@ -3697,6 +3732,23 @@ export default function App() {
                 isEmbeddedView={true}
               />
             </div>
+          ) : currentView === 'about' ? (
+            /* VIEW: Dedicated About BundeliTube Page */
+            <AboutView
+              language={language}
+              onNavigateHome={() => setCurrentView('home')}
+              onOpenPolicies={handleOpenPolicies}
+              onOpenContactUs={() => setIsContactUsModalOpen(true)}
+              theme={theme}
+            />
+          ) : currentView === 'creator_program' ? (
+            /* VIEW: Dedicated 50/50 Creator Revenue Program & How it Works */
+            <CreatorProgramView
+              language={language}
+              onNavigateHome={() => setCurrentView('home')}
+              onOpenPolicies={handleOpenPolicies}
+              theme={theme}
+            />
           ) : (
             /* VIEW 8: YouTube Home Page Feed */
             <div className="max-w-[1700px] mx-auto pt-2">
@@ -3876,6 +3928,17 @@ export default function App() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Simple, Clean AdSense Compliance Footer with all 6 Pages */}
+          {!selectedVideo && currentView !== 'studio' && currentView !== 'shorts' && (
+            <SimpleFooter
+              language={language}
+              onNavigateView={setCurrentView}
+              onOpenPolicies={handleOpenPolicies}
+              onOpenContactUs={() => setIsContactUsModalOpen(true)}
+              theme={theme}
+            />
           )}
         </main>
       </div>

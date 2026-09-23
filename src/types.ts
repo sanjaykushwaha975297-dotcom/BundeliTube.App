@@ -13,7 +13,9 @@ export interface Video {
   description: string;
   youtubeId: string;
   youtubeUrl?: string;
+  videoUrl?: string;
   thumbnail: string;
+  thumbnailUrl?: string;
   category: string;
   artist: string;
   channelId: string;
@@ -30,6 +32,7 @@ export interface Video {
   dislikes?: number;
   duration: string;
   uploadDate: string;
+  uploadedAt?: string;
   isVerified?: boolean;
   isMonetized?: boolean;
   estimatedEarnings?: number;
@@ -549,7 +552,9 @@ export type MainAppView =
   | 'podcasts' 
   | 'studio' 
   | 'wallet'
-  | 'policies';
+  | 'policies'
+  | 'about'
+  | 'creator_program';
 
 export interface ShortItem {
   id: string;

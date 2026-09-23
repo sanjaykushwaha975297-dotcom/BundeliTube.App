@@ -1312,4 +1312,155 @@ export async function rejectWithdrawalRequest(requestId: string, reason?: string
   };
 }
 
+export async function getVideoSubmissionsForAdmin() {
+  try {
+    const videoMap = new Map<string, any>();
+
+    // 1. Fetch from video_submissions
+    try {
+      const subSnap = await getDocs(collection(db, 'video_submissions'));
+      subSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        videoMap.set(docSnap.id, {
+          id: docSnap.id,
+          title: data.title || 'शीर्षक रहित',
+          channelName: data.channelName || data.artist || 'बुन्देली क्रिएटर',
+          channelAvatar: data.channelAvatar || '',
+          creatorUid: data.creatorUid || data.creatorId || '',
+          category: data.category || 'lokgeet',
+          artist: data.artist || '',
+          youtubeId: data.youtubeId || '',
+          youtubeUrl: data.youtubeUrl || (data.youtubeId ? `https://www.youtube.com/watch?v=${data.youtubeId}` : ''),
+          thumbnailUrl: data.thumbnailUrl || data.thumbnail || (data.youtubeId ? `https://img.youtube.com/vi/${data.youtubeId}/hqdefault.jpg` : ''),
+          duration: data.duration || '',
+          verificationCode: data.verificationCode || '',
+          status: data.status || 'pending',
+          isShort: Boolean(data.isShort || data.videoType === 'short' || data.category === 'shorts'),
+          createdAt: data.createdAt || data.submittedAt || '',
+          rejectionReason: data.rejectionReason || ''
+        });
+      });
+    } catch (e) {
+      console.warn('Error reading video_submissions:', e);
+    }
+
+    // 2. Fetch from videos collection for any videos submitted directly
+    try {
+      const vidSnap = await getDocs(collection(db, 'videos'));
+      vidSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        // Ignore mock/dummy videos
+        if (
+          docSnap.id.startsWith('vid-90s-') ||
+          docSnap.id.startsWith('vid-cid-') ||
+          docSnap.id.startsWith('vid-spiritual-') ||
+          docSnap.id.startsWith('vid-bundeli-0')
+        ) {
+          return;
+        }
+
+        const existing = videoMap.get(docSnap.id);
+        const vidStatus = data.status || (existing ? existing.status : 'published');
+
+        videoMap.set(docSnap.id, {
+          id: docSnap.id,
+          title: data.title || existing?.title || 'शीर्षक रहित',
+          channelName: data.channelName || existing?.channelName || data.artist || 'बुन्देली क्रिएटर',
+          channelAvatar: data.channelAvatar || existing?.channelAvatar || '',
+          creatorUid: data.creatorId || data.creatorUid || existing?.creatorUid || '',
+          category: data.category || existing?.category || 'lokgeet',
+          artist: data.artist || existing?.artist || '',
+          youtubeId: data.youtubeId || existing?.youtubeId || '',
+          youtubeUrl: data.youtubeUrl || existing?.youtubeUrl || (data.youtubeId ? `https://www.youtube.com/watch?v=${data.youtubeId}` : ''),
+          thumbnailUrl: data.thumbnail || data.thumbnailUrl || existing?.thumbnailUrl || (data.youtubeId ? `https://img.youtube.com/vi/${data.youtubeId}/hqdefault.jpg` : ''),
+          duration: data.duration || existing?.duration || '',
+          verificationCode: data.verificationCode || existing?.verificationCode || '',
+          status: vidStatus,
+          isShort: Boolean(data.isShort || data.videoType === 'short' || data.category === 'shorts' || existing?.isShort),
+          createdAt: data.createdAt || data.submittedAt || existing?.createdAt || '',
+          rejectionReason: data.rejectionReason || existing?.rejectionReason || ''
+        });
+      });
+    } catch (e) {
+      console.warn('Error reading videos:', e);
+    }
+
+    const videos = Array.from(videoMap.values());
+    // Sort: Pending first, then newest
+    videos.sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      const numA = parseInt(a.id.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.id.replace(/\D/g, '')) || 0;
+      return numB - numA;
+    });
+
+    const pendingCount = videos.filter(v => v.status === 'pending').length;
+
+    return {
+      success: true,
+      videos,
+      pendingCount
+    };
+  } catch (err: any) {
+    console.error('Error fetching videos for admin:', err);
+    return { success: false, videos: [], pendingCount: 0, error: err.message };
+  }
+}
+
+export async function approveVideoInFirestore(videoId: string) {
+  try {
+    const nowIso = new Date().toISOString();
+    // 1. Update in videos collection to approved & published
+    const vRef = doc(db, 'videos', videoId);
+    await setDoc(vRef, {
+      status: 'approved',
+      isVerified: true,
+      approvedAt: nowIso,
+      updatedAt: nowIso
+    }, { merge: true });
+
+    // 2. Update in video_submissions collection
+    const subRef = doc(db, 'video_submissions', videoId);
+    await setDoc(subRef, {
+      status: 'approved',
+      approvedAt: nowIso,
+      updatedAt: nowIso
+    }, { merge: true }).catch(() => null);
+
+    return { success: true, videoId, status: 'approved', message: 'वीडियो स्वीकृत हो गया है और अब मुख्य पेज (होम) पर लाइव है!' };
+  } catch (error: any) {
+    console.error('Error approving video:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function rejectVideoInFirestore(videoId: string, reason?: string) {
+  try {
+    const nowIso = new Date().toISOString();
+    // 1. Update in videos collection
+    const vRef = doc(db, 'videos', videoId);
+    await setDoc(vRef, {
+      status: 'rejected',
+      rejectionReason: reason || 'अस्वीकृत किया गया',
+      rejectedAt: nowIso,
+      updatedAt: nowIso
+    }, { merge: true });
+
+    // 2. Update in video_submissions collection
+    const subRef = doc(db, 'video_submissions', videoId);
+    await setDoc(subRef, {
+      status: 'rejected',
+      rejectionReason: reason || 'अस्वीकृत किया गया',
+      rejectedAt: nowIso,
+      updatedAt: nowIso
+    }, { merge: true }).catch(() => null);
+
+    return { success: true, videoId, status: 'rejected', reason, message: 'वीडियो अस्वीकृत कर दिया गया है।' };
+  } catch (error: any) {
+    console.error('Error rejecting video:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 

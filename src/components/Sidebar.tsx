@@ -35,7 +35,11 @@ import {
   LogOut,
   PlusCircle,
   ShieldCheck,
-  Mail
+  Mail,
+  Info,
+  DollarSign,
+  Scale,
+  FileText
 } from 'lucide-react';
 import { MOCK_SUBSCRIBED_CHANNELS, CATEGORIES } from '../data/mockData';
 import { Channel, UserAccount, MainAppView } from '../types';
@@ -340,34 +344,111 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <div className={`border-t ${isLight ? 'border-slate-200' : 'border-slate-800'} my-1.5 mx-3`} />
 
-      {/* 6. Settings, Language, Help & Copyright */}
+      {/* 6. Dedicated AdSense Compliance & Legal Pages */}
       <div className="p-3 space-y-0.5">
+        <div className={`px-3 py-1 text-[11px] font-bold ${isLight ? 'text-amber-600' : 'text-amber-400'} uppercase tracking-wider ${!isOpen && 'lg:hidden'}`}>
+          {language === 'hi' ? 'AdSense व कानूनी नीतियां' : 'AdSense & Legal'}
+        </div>
+
+        {/* 1. About Us */}
         <button
-          onClick={() => onOpenPolicies ? onOpenPolicies('admob_adsense') : onNavigate('policies')}
-          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-normal cursor-pointer ${
-            isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+          type="button"
+          onClick={() => onNavigate('about')}
+          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-medium cursor-pointer ${
+            currentView === 'about'
+              ? isLight ? 'bg-amber-100 text-amber-950 font-bold' : 'bg-slate-800 text-amber-400 font-bold'
+              : isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
           } transition ${!isOpen && 'lg:justify-center lg:px-2'}`}
-          title={language === 'hi' ? 'नीतियां व कानूनी केंद्र (AdMob & AdSense Policy)' : 'Policies & Legal Center'}
+          title={language === 'hi' ? 'हमारे बारे में (About Us)' : 'About Us'}
         >
-          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
+          <Info className="w-4 h-4 shrink-0 text-amber-500" />
           <span className={`truncate ${!isOpen && 'lg:hidden'}`}>
-            {language === 'hi' ? 'नीतियां व शर्तें' : 'Policies & Terms'}
+            {language === 'hi' ? 'हमारे बारे में (About Us)' : 'About Us'}
           </span>
         </button>
 
+        {/* 2. Privacy Policy */}
         <button
-          onClick={onOpenContactUs}
-          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-normal cursor-pointer ${
+          type="button"
+          onClick={() => onOpenPolicies ? onOpenPolicies('admob_adsense') : onNavigate('policies')}
+          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-medium cursor-pointer ${
             isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
           } transition ${!isOpen && 'lg:justify-center lg:px-2'}`}
-          title={language === 'hi' ? 'संपर्क करें (Contact Us: bundelitubeapp@gmail.com)' : 'Contact Us (bundelitubeapp@gmail.com)'}
+          title={language === 'hi' ? 'गोपनीयता नीति (Privacy Policy)' : 'Privacy Policy'}
         >
-          <Mail className="w-4 h-4 shrink-0 text-blue-500" />
+          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
+          <span className={`truncate ${!isOpen && 'lg:hidden'}`}>
+            {language === 'hi' ? 'गोपनीयता नीति (Privacy)' : 'Privacy Policy'}
+          </span>
+        </button>
+
+        {/* 3. Terms of Service */}
+        <button
+          type="button"
+          onClick={() => onOpenPolicies ? onOpenPolicies('terms') : onNavigate('policies')}
+          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-medium cursor-pointer ${
+            isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+          } transition ${!isOpen && 'lg:justify-center lg:px-2'}`}
+          title={language === 'hi' ? 'उपयोग की शर्तें (Terms of Service)' : 'Terms of Service'}
+        >
+          <FileText className="w-4 h-4 shrink-0 text-blue-500" />
+          <span className={`truncate ${!isOpen && 'lg:hidden'}`}>
+            {language === 'hi' ? 'उपयोग की शर्तें (Terms)' : 'Terms of Service'}
+          </span>
+        </button>
+
+        {/* 4. Contact Us */}
+        <button
+          type="button"
+          onClick={onOpenContactUs ? onOpenContactUs : () => onOpenPolicies ? onOpenPolicies('grievance') : onNavigate('policies')}
+          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-medium cursor-pointer ${
+            isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+          } transition ${!isOpen && 'lg:justify-center lg:px-2'}`}
+          title={language === 'hi' ? 'संपर्क करें (Contact Us)' : 'Contact Us'}
+        >
+          <Mail className="w-4 h-4 shrink-0 text-cyan-500" />
           <span className={`truncate ${!isOpen && 'lg:hidden'}`}>
             {language === 'hi' ? 'संपर्क करें (Contact Us)' : 'Contact Us'}
           </span>
         </button>
 
+        {/* 5. Disclaimer */}
+        <button
+          type="button"
+          onClick={() => onOpenPolicies ? onOpenPolicies('disclaimer') : onNavigate('policies')}
+          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-medium cursor-pointer ${
+            isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+          } transition ${!isOpen && 'lg:justify-center lg:px-2'}`}
+          title={language === 'hi' ? 'कानूनी अस्वीकरण (Disclaimer)' : 'Disclaimer'}
+        >
+          <Scale className="w-4 h-4 shrink-0 text-amber-500" />
+          <span className={`truncate ${!isOpen && 'lg:hidden'}`}>
+            {language === 'hi' ? 'अस्वीकरण (Disclaimer)' : 'Disclaimer'}
+          </span>
+        </button>
+
+        {/* 6. 50/50 Creator Revenue Policy */}
+        <button
+          type="button"
+          onClick={() => onNavigate('creator_program')}
+          className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-medium cursor-pointer ${
+            currentView === 'creator_program'
+              ? isLight ? 'bg-emerald-100 text-emerald-950 font-bold' : 'bg-slate-800 text-emerald-400 font-bold'
+              : isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+          } transition ${!isOpen && 'lg:justify-center lg:px-2'}`}
+          title={language === 'hi' ? '50/50 क्रिएटर प्रोग्राम (How it Works)' : '50/50 Creator Program'}
+        >
+          <DollarSign className="w-4 h-4 shrink-0 text-emerald-500" />
+          <span className={`truncate ${!isOpen && 'lg:hidden'}`}>
+            {language === 'hi' ? '50-50 कमाई नीति' : '50/50 Creator Policy'}
+          </span>
+        </button>
+      </div>
+
+      <div className={`border-t ${isLight ? 'border-slate-200' : 'border-slate-800'} my-1.5 mx-3`} />
+
+      {/* 7. Settings, Copyright, Language */}
+      <div className="p-3 space-y-0.5">
         <button
           onClick={onOpenSettings}
           className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl text-xs sm:text-[13px] font-normal cursor-pointer ${
@@ -419,61 +500,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Footer copyright info */}
+      {/* Clean, minimalist AdSense footer */}
       {isOpen && (
-        <div className={`p-4 text-[11px] ${isLight ? 'text-slate-400' : 'text-slate-500'} space-y-2 mt-auto border-t ${isLight ? 'border-slate-100' : 'border-slate-800/80'}`}>
-          <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[11px]">
-            <button 
-              type="button"
-              onClick={() => onOpenPolicies ? onOpenPolicies('admob_adsense') : onNavigate('policies')} 
-              className="hover:underline hover:text-emerald-500 cursor-pointer text-left"
-            >
-              {language === 'hi' ? 'AdSense/AdMob गोपनीयता' : 'Privacy & AdSense'}
-            </button>
-            <button 
-              type="button"
-              onClick={() => onOpenPolicies ? onOpenPolicies('bundelitube') : onNavigate('policies')} 
-              className="hover:underline text-amber-500 font-semibold cursor-pointer text-left"
-            >
-              {language === 'hi' ? 'बुन्देली अर्निंग नीति' : 'BundeliTube Policy'}
-            </button>
-            <button 
-              type="button"
-              onClick={() => onOpenPolicies ? onOpenPolicies('terms') : onNavigate('policies')} 
-              className="hover:underline cursor-pointer text-left"
-            >
-              {language === 'hi' ? 'शर्तें' : 'Terms'}
-            </button>
-            <button 
-              type="button"
-              onClick={() => onOpenPolicies ? onOpenPolicies('copyright') : onNavigate('policies')} 
-              className="hover:underline cursor-pointer text-left"
-            >
-              {language === 'hi' ? 'कॉपीराइट' : 'Copyright'}
-            </button>
-            <button 
-              type="button"
-              onClick={() => onOpenPolicies ? onOpenPolicies('invalid_traffic') : onNavigate('policies')} 
-              className="hover:underline cursor-pointer text-left text-red-400"
-            >
-              {language === 'hi' ? 'अमान्य क्लिक नीति' : 'Anti-Fraud'}
-            </button>
-            <button 
-              type="button"
-              onClick={() => onOpenPolicies ? onOpenPolicies('grievance') : onNavigate('policies')} 
-              className="hover:underline cursor-pointer text-left text-teal-400"
-            >
-              {language === 'hi' ? 'शिकायत अधिकारी (IT Rules)' : 'Grievance Officer'}
-            </button>
-            <button 
-              type="button"
-              onClick={onOpenContactUs} 
-              className="hover:underline cursor-pointer text-left text-blue-400 font-semibold"
-            >
-              {language === 'hi' ? 'संपर्क करें (Contact)' : 'Contact Us'}
-            </button>
+        <div className={`p-4 text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'} space-y-1.5 mt-auto border-t ${isLight ? 'border-slate-100' : 'border-slate-800/80'}`}>
+          <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Google AdSense & AdMob Partner</span>
           </div>
-          <p className="text-[10px]">© 2026 BundeliTube LLC</p>
+          <p className="text-[10px] text-slate-400">© 2026 BundeliTube (बुन्देली ट्यूब) • All Rights Reserved</p>
         </div>
       )}
     </aside>

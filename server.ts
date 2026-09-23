@@ -43,9 +43,13 @@ import {
   rejectChannelApplication,
   getWithdrawalRequests,
   completeWithdrawalRequest,
-  rejectWithdrawalRequest
+  rejectWithdrawalRequest,
+  approveVideoInFirestore,
+  rejectVideoInFirestore,
+  getVideoSubmissionsForAdmin
 } from "./server/externalAdminService.js";
 import { getExternalAdminPortalHtml } from "./server/externalAdminPortalHtml.js";
+import { renderLegalPage } from "./server/legalPagesHtml.js";
 
 // Health check
 app.get("/api/health", (_req: Request, res: Response) => {
@@ -318,15 +322,73 @@ app.post("/api/upload-app-logo", upload.single("logo"), async (req: Request, res
   }
 });
 
-// Admin video moderation endpoint stubs
-app.post("/api/admin/videos/approve", (req: Request, res: Response) => {
-  const { videoId } = req.body;
-  res.json({ success: true, videoId, status: "approved", approvedAt: new Date().toISOString() });
+// Admin video moderation endpoints with Firestore integration
+app.get("/api/admin/videos", async (_req: Request, res: Response) => {
+  const result = await getVideoSubmissionsForAdmin();
+  res.json(result);
 });
 
-app.post("/api/admin/videos/reject", (req: Request, res: Response) => {
+app.post("/api/admin/videos/approve", async (req: Request, res: Response) => {
+  const { videoId } = req.body;
+  if (!videoId) {
+    return res.status(400).json({ success: false, message: "videoId is required" });
+  }
+  const result = await approveVideoInFirestore(videoId);
+  res.json(result);
+});
+
+app.post("/api/admin/videos/reject", async (req: Request, res: Response) => {
   const { videoId, reason } = req.body;
-  res.json({ success: true, videoId, status: "rejected", reason, rejectedAt: new Date().toISOString() });
+  if (!videoId) {
+    return res.status(400).json({ success: false, message: "videoId is required" });
+  }
+  const result = await rejectVideoInFirestore(videoId, reason);
+  res.json(result);
+});
+
+// ==================== GOOGLE ADSENSE & SEO CRAWLABLE ROUTES ====================
+// Dedicated, super-fast crawlable HTML pages for Google AdSense compliance & review
+
+app.get("/robots.txt", (_req: Request, res: Response) => {
+  const robotsPath = path.join(process.cwd(), "public", "robots.txt");
+  if (fs.existsSync(robotsPath)) {
+    res.type("text/plain").sendFile(robotsPath);
+  } else {
+    res.type("text/plain").send("User-agent: *\nAllow: /\n\nUser-agent: Mediapartners-Google\nAllow: /\n\nSitemap: https://bundelitube.fun/sitemap.xml\n");
+  }
+});
+
+app.get("/sitemap.xml", (_req: Request, res: Response) => {
+  const sitemapPath = path.join(process.cwd(), "public", "sitemap.xml");
+  if (fs.existsSync(sitemapPath)) {
+    res.type("application/xml").sendFile(sitemapPath);
+  } else {
+    res.status(404).send("Sitemap not found");
+  }
+});
+
+app.get(["/privacy-policy", "/privacy"], (_req: Request, res: Response) => {
+  res.send(renderLegalPage("privacy"));
+});
+
+app.get(["/terms", "/terms-and-conditions", "/terms-of-service"], (_req: Request, res: Response) => {
+  res.send(renderLegalPage("terms"));
+});
+
+app.get(["/about", "/about-us"], (_req: Request, res: Response) => {
+  res.send(renderLegalPage("about"));
+});
+
+app.get(["/contact", "/contact-us"], (_req: Request, res: Response) => {
+  res.send(renderLegalPage("contact"));
+});
+
+app.get("/disclaimer", (_req: Request, res: Response) => {
+  res.send(renderLegalPage("disclaimer"));
+});
+
+app.get(["/creator-program", "/monetization-policy"], (_req: Request, res: Response) => {
+  res.send(renderLegalPage("creator-program"));
 });
 
 // ==================== VITE SERVER & STATIC SERVING ====================

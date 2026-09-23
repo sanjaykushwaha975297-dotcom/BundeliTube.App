@@ -197,6 +197,9 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
     const finalDuration = duration.trim();
     const submissionId = `vid-${Date.now()}`;
 
+    // All uploads strictly go to 'pending' review until Admin approves from Admin Panel website
+    const effectiveStatus = 'pending' as const;
+
     const submissionData: VideoSubmission = {
       id: submissionId,
       creatorUid: effectiveCreatorUid,
@@ -218,13 +221,13 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
       sourceType: 'youtube',
       isShort: isShortFormat,
       videoType: isShortFormat ? 'short' : 'video',
-      status: isShortFormat ? 'approved' : 'pending',
+      status: 'pending',
       createdAt: new Date().toISOString()
     };
 
     try {
       const db = getFirestoreSafe();
-      // 1. Save entry in Firestore 'videos' collection (with status 'pending' until verified or live)
+      // 1. Save entry in Firestore 'videos' collection with status 'pending'
       const videoEntry = {
         id: submissionData.id,
         title: submissionData.title,
@@ -244,7 +247,7 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
         views: 0,
         likes: 0,
         duration: finalDuration,
-        uploadDate: new Date().toISOString().split('T')[0],
+        uploadDate: language === 'hi' ? 'समीक्षाधीन (Under Review)' : 'Under Review',
         isVerified: false,
         isMonetized: isShortFormat ? false : isMonetized,
         estimatedEarnings: 0,
@@ -255,17 +258,19 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
         sponsorName: hasPaidPromotion ? sponsorName.trim() : undefined,
         sourceType: 'youtube',
         audioOnlyAvailable: true,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        submittedAt: new Date().toISOString()
       };
 
       if (db) {
         // 1. Save into video_submissions for Admin Review & Verification
         await setDoc(doc(db, 'video_submissions', submissionData.id), cleanFirestoreData({
           ...submissionData,
+          status: 'pending',
           serverTimestamp: serverTimestamp()
         }), { merge: true });
 
-        // 2. Also save into videos collection with status: 'pending' for external admin panel access
+        // 2. Also save into videos collection with status: 'pending' for external admin website
         await setDoc(doc(db, 'videos', submissionData.id), cleanFirestoreData({
           ...videoEntry,
           status: 'pending',
@@ -275,7 +280,7 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
     } catch (err: any) {
       console.warn('Video Firestore write note:', err);
     } finally {
-      // Create a pending video item for user's UI
+      // Create a pending video item for user's UI & Studio
       const newVideo: Video = {
         id: submissionData.id,
         title: submissionData.title,
@@ -289,14 +294,14 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
         channelName: finalChannelName,
         channelAvatar: effectiveChanAvatar,
         creatorId: effectiveCreatorUid,
-        status: 'pending' as const,
+        status: 'pending',
         isShort: isShortFormat,
         videoType: isShortFormat ? 'short' : 'video',
         views: 0,
         likes: 0,
         commentsCount: 0,
         duration: finalDuration,
-        uploadDate: language === 'hi' ? 'अभी-अभी' : 'Just now',
+        uploadDate: language === 'hi' ? 'समीक्षाधीन (Under Review)' : 'Under Review',
         isVerified: false,
         isMonetized: isShortFormat ? false : isMonetized,
         estimatedEarnings: 0,
@@ -439,17 +444,13 @@ export const UploadVideoModal: React.FC<UploadVideoModalProps> = ({
             <div>
               <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-bundeli">
                 {videoFormat === 'short' 
-                  ? (language === 'hi' ? '⚡ शॉर्ट्स सबमिट हुआ (समीक्षाधीन)!' : '⚡ YouTube Short Submitted (Pending Review)!')
-                  : (language === 'hi' ? '🎬 वीडियो सबमिट हुआ (समीक्षाधीन)!' : '🎬 Video Submitted (Pending Review)!')}
+                  ? (language === 'hi' ? '⚡ शॉर्ट्स सबमिट हुआ (समीक्षाधीन)!' : '⚡ Short Submitted (Under Review)!')
+                  : (language === 'hi' ? '🎬 वीडियो सबमिट हुआ (समीक्षाधीन)!' : '🎬 Video Submitted (Under Review)!')}
               </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
-                {videoFormat === 'short'
-                  ? (language === 'hi'
-                      ? 'आपका शॉर्ट्स वीडियो सफलतापूर्वक सबमिट हो गया है। एडमिन द्वारा सत्यापन और अप्रूवल (स्वीकृति) के बाद ही यह शॉर्ट्स फ़ीड और पब्लिक वीडियो में लाइव प्रदर्शित होगा।'
-                      : 'Your YouTube Short has been submitted for review. It will become publicly visible in the Shorts Feed and Video lists once approved by the Admin.')
-                  : (language === 'hi'
-                      ? 'आपका वीडियो फायरबेस में पेंडिंग स्थिति में सुरक्षित हो गया है। एडमिन द्वारा सत्यापन और अप्रूवल के बाद ही वीडियो लाइव होगा।'
-                      : 'Your video is saved under pending status. It will go live after admin verification and approval.')}
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 max-w-md mx-auto leading-relaxed">
+                {language === 'hi'
+                  ? 'आपका वीडियो सफलतापूर्वक सबमिट हो गया है। जब व्यवस्थापक (Admin) अपनी एडमिन वेबसाइट से इस वीडियो की समीक्षा करके इसे "स्वीकृत (Approve)" करेंगे, तभी यह मेन पेज (होम फ़ीड) पर लाइव दिखाई देने लगेगा।'
+                  : 'Your video has been submitted for Admin review. Once the Admin reviews and approves it from the Admin Panel website, it will automatically go live on the main page feed.'}
               </p>
             </div>
 
