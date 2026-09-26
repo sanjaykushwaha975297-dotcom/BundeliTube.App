@@ -332,22 +332,11 @@ export const ShortsView: React.FC<ShortsViewProps> = ({
     setIsTransitioning(true);
     setCurrentTime(0);
 
-    // 2. SHORT VIDEO ADS (5-Shorts Rule):
-    // Every time a user watches 1 short video, increment the counter by +1.
     const nextCount = shortVideoCount + 1;
-
-    // When shortVideoCount reaches 5, the ad shown on the next (6th) short video is triggered.
-    if (nextCount >= 5) {
-      setShortVideoCount(5);
-      setIsAdPlaying(true);
-      setIsPlaying(false);
-      sendIframeCommand('pauseVideo');
-    } else {
-      setShortVideoCount(nextCount);
-      const nextIdx = currentIndex < shortsList.length - 1 ? currentIndex + 1 : 0;
-      setCurrentIndex(nextIdx);
-      setIsPlaying(true);
-    }
+    setShortVideoCount(nextCount);
+    const nextIdx = currentIndex < shortsList.length - 1 ? currentIndex + 1 : 0;
+    setCurrentIndex(nextIdx);
+    setIsPlaying(true);
     setTimeout(() => setIsTransitioning(false), 200);
   };
 

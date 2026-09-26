@@ -57,8 +57,6 @@ import { PolicyCenterModal, PolicyTab } from './components/PolicyCenterModal';
 import { ContactUsModal } from './components/ContactUsModal';
 import { ChannelPendingModal } from './components/ChannelPendingModal';
 import { DynamicBannerSlider } from './components/DynamicBannerSlider';
-import { AdMobNativeCard } from './components/AdMobNativeCard';
-import { TopBannerAd } from './components/TopBannerAd';
 import { AboutView } from './components/AboutView';
 import { CreatorProgramView } from './components/CreatorProgramView';
 import { SimpleFooter } from './components/SimpleFooter';
@@ -3757,40 +3755,14 @@ export default function App() {
               {filteredVideos.length > 0 ? (
                 <div className="space-y-6 px-1 sm:px-2">
                   
-                  {/* Top Banner Ad (Google AdMob Large Masthead Long Video Format) */}
-                  {remoteConfig.adsEnabled && !searchQuery && (
-                    <TopBannerAd
-                      admobBannerId={remoteConfig.admobBannerId}
-                      language={language}
-                      onPlayVideo={(v) => handlePlayVideo(v)}
-                      onNavigateToUpload={() => {
-                        if (!currentUser) setIsLoginModalOpen(true);
-                        else setIsUploadModalOpen(true);
-                      }}
-                      onNavigateToChannel={() => {
-                        if (!currentUser) setIsLoginModalOpen(true);
-                        else setIsCreateChannelModalOpen(true);
-                      }}
-                    />
-                  )}
-
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-x-4 gap-y-8 pt-1">
-                    {filteredVideos.slice(0, 6).map((video, idx) => (
-                      <React.Fragment key={video.id}>
-                        <VideoCard
-                          video={video}
-                          onPlay={(v) => handlePlayVideo(v)}
-                          language={language}
-                        />
-
-                        {/* Native AdMob Card embedded according to remote frequency */}
-                        {remoteConfig.adsEnabled && (idx + 1) % (remoteConfig.nativeAdInterval || 4) === 0 && (
-                          <AdMobNativeCard
-                            admobNativeId={remoteConfig.admobNativeId}
-                            language={language}
-                          />
-                        )}
-                      </React.Fragment>
+                    {filteredVideos.slice(0, 6).map((video) => (
+                      <VideoCard
+                        key={video.id}
+                        video={video}
+                        onPlay={(v) => handlePlayVideo(v)}
+                        language={language}
+                      />
                     ))}
                   </div>
 
@@ -3849,21 +3821,13 @@ export default function App() {
                   {/* Remaining Videos below the Shorts shelf */}
                   {filteredVideos.length > 6 && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-x-4 gap-y-8 pt-2">
-                      {filteredVideos.slice(6).map((video, idx) => (
-                        <React.Fragment key={video.id}>
-                          <VideoCard
-                            video={video}
-                            onPlay={(v) => handlePlayVideo(v)}
-                            language={language}
-                          />
-
-                          {remoteConfig.adsEnabled && (idx + 7) % (remoteConfig.nativeAdInterval || 4) === 0 && (
-                            <AdMobNativeCard
-                              admobNativeId={remoteConfig.admobNativeId}
-                              language={language}
-                            />
-                          )}
-                        </React.Fragment>
+                      {filteredVideos.slice(6).map((video) => (
+                        <VideoCard
+                          key={video.id}
+                          video={video}
+                          onPlay={(v) => handlePlayVideo(v)}
+                          language={language}
+                        />
                       ))}
                     </div>
                   )}

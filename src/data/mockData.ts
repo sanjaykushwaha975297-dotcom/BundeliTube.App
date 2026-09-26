@@ -237,7 +237,7 @@ export const MOCK_NOTIFICATIONS: any[] = [];
 export const INITIAL_BANNERS: AppBanner[] = [];
 
 export const INITIAL_REMOTE_CONFIG: RemoteAppConfig = {
-  adsEnabled: true,
+  adsEnabled: false,
   interstitialFrequency: 3, // 1 ad every 3 video plays
   nativeAdInterval: 4, // 1 in-feed native card every 4 videos
   rewardedAdEnabled: true,

@@ -144,8 +144,6 @@ export const SimpleFooter: React.FC<SimpleFooterProps> = ({
             © {new Date().getFullYear()} BundeliTube (बुन्देली ट्यूब) • {isHi ? 'सर्वाधिकार सुरक्षित।' : 'All rights reserved.'} Registered Digital Intermediary under Indian IT Act 2000.
           </p>
           <div className="flex items-center justify-center gap-3 text-[11px] text-slate-400">
-            <span>Publisher: pub-5666532653138550</span>
-            <span>•</span>
             <span>Support: sanjaykushwaha975297@gmail.com</span>
           </div>
         </div>

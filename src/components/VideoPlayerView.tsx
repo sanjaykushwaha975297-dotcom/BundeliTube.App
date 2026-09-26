@@ -69,10 +69,8 @@ import {
   removeDownloadedVideoFromStorage, 
   FALLBACK_VIDEO_STREAMS 
 } from '../services/videoCache';
-import { AdOverlay, SPONSOR_ADS } from './AdOverlay';
 import { AD_POOL, AdPoolItem, ActiveAdQueueItem } from './MonetizedVideoScreen';
 import { processInStreamVideoAdRevenue, recordLongVideoAdImpression, RevenueTransactionRecord } from '../lib/revenueService';
-import { VideoPlayerAdMobUnit } from './VideoPlayerAdMobUnit';
 import { isSelfViewFraud } from '../lib/monetizationSecurity';
 import { 
   recordVideoView, 
@@ -1984,22 +1982,6 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                 </div>
               </div>
 
-              {/* 🌟 Google AdMob Policy Compliant Below-Player Banner (50% Creator / 50% Admin Split) */}
-              <VideoPlayerAdMobUnit
-                key={`below-player-${video.id}`}
-                video={video}
-                language={language}
-                variant="below_player"
-                currentUser={currentUser}
-                onAdImpression={onAdImpressionCredited ? ({ creatorShare, adminShare }) => {
-                  onAdImpressionCredited({
-                    impressionValue: Number((creatorShare + adminShare).toFixed(2)),
-                    creatorShare,
-                    videoId: video.id
-                  });
-                } : undefined}
-              />
-
               {/* Video Title & Metadata */}
               <div className="space-y-2">
                 {video.hasPaidPromotion && (
@@ -2401,16 +2383,6 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                           <span className="text-[10px] text-slate-500 mt-1">{formatViews(item.views)}</span>
                         </div>
                       </div>
-
-                      {/* Google AdMob In-Feed Native Sponsored Card (After 2nd video) */}
-                      {idx === 1 && (
-                        <VideoPlayerAdMobUnit
-                          video={item}
-                          language={language}
-                          variant="in_feed"
-                          currentUser={currentUser}
-                        />
-                      )}
                     </React.Fragment>
                   ))}
                 </div>
@@ -2457,16 +2429,6 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({
                       <span className="text-[10px] text-slate-500 mt-1">{formatViews(item.views)}</span>
                     </div>
                   </div>
-
-                  {/* Google AdMob In-Feed Native Sponsored Card (After 2nd video) */}
-                  {idx === 1 && (
-                    <VideoPlayerAdMobUnit
-                      video={item}
-                      language={language}
-                      variant="in_feed"
-                      currentUser={currentUser}
-                    />
-                  )}
                 </React.Fragment>
               ))}
             </div>

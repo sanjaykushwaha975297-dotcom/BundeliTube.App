@@ -171,8 +171,8 @@ export const AboutView: React.FC<AboutViewProps> = ({
           </div>
 
           <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
-            <span className="text-slate-400 block text-[11px]">Google AdSense प्रकाशक आईडी:</span>
-            <span className="font-bold text-emerald-500 text-sm font-mono">pub-5666532653138550</span>
+            <span className="text-slate-400 block text-[11px]">Google AdSense स्थिति:</span>
+            <span className="font-bold text-emerald-500 text-sm">सत्यापित प्रकाशक (Verified Partner)</span>
           </div>
 
           <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
