@@ -3205,8 +3205,14 @@ export default function App() {
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} flex flex-col font-sans transition-colors`}>
       
-      {/* Top Main App Header (Full YouTube Feature Set - hidden in dedicated Creator Studio & on mobile watch view) */}
-      <div className={selectedVideo ? 'hidden sm:block w-full sticky top-0 z-40' : currentView === 'studio' ? 'hidden' : 'w-full sticky top-0 z-40'}>
+      {/* Top Main App Header & Category Bar (Fixed at top - stays completely in place while video list scrolls) */}
+      <div className={
+        selectedVideo 
+          ? `hidden sm:block w-full fixed top-0 left-0 right-0 z-40 ${theme === 'light' ? 'bg-white' : 'bg-slate-950'}` 
+          : currentView === 'studio' 
+            ? 'hidden' 
+            : `w-full fixed top-0 left-0 right-0 z-40 ${theme === 'light' ? 'bg-white' : 'bg-slate-950'}`
+      }>
         <div className="relative z-50">
           <Header
             onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
@@ -3290,9 +3296,11 @@ export default function App() {
         {!selectedVideo && currentView === 'home' && (
           <div className={`w-full relative z-10 ${
             theme === 'light' 
-              ? 'bg-white/95 text-slate-900 border-slate-200/80 shadow-2xs' 
-              : 'bg-slate-950/95 text-slate-100 border-slate-800/80 shadow-2xs'
-          } backdrop-blur-md px-2 sm:px-4 lg:px-6 py-1 border-b transition-colors`}>
+              ? 'bg-white text-slate-900 border-slate-200/80 shadow-2xs' 
+              : 'bg-slate-950 text-slate-100 border-slate-800/80 shadow-2xs'
+          } px-2 sm:px-4 lg:px-6 py-1 border-b transition-all ${
+            sidebarOpen ? 'lg:pl-60' : 'lg:pl-18'
+          }`}>
             <div className="max-w-[1700px] mx-auto">
               <CategoryPills
                 selectedCategory={selectedCategory}
@@ -3424,11 +3432,17 @@ export default function App() {
           />
         )}
 
-        {/* Center Content / Active View */}
+        {/* Center Content / Active View - Only the video list & content scrolls */}
         <main className={`flex-1 w-full min-w-0 transition-all ${
-          selectedVideo || currentView === 'studio'
+          currentView === 'studio' ? 'pl-0' : sidebarOpen ? 'lg:pl-60' : 'lg:pl-18'
+        } ${
+          currentView === 'studio'
             ? 'p-0 overflow-visible'
-            : 'px-2 sm:px-4 lg:px-6 pt-0 pb-20 lg:pb-6 overflow-x-hidden'
+            : selectedVideo
+              ? 'p-0 overflow-visible sm:pt-14'
+              : currentView === 'home'
+                ? 'px-2 sm:px-4 lg:px-6 pt-[108px] pb-20 lg:pb-6 overflow-x-hidden'
+                : 'px-2 sm:px-4 lg:px-6 pt-16 pb-20 lg:pb-6 overflow-x-hidden'
         }`}>
           
           {/* VIEW 1: Video Player Active */}
@@ -3755,7 +3769,7 @@ export default function App() {
               {filteredVideos.length > 0 ? (
                 <div className="space-y-6 px-1 sm:px-2">
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-x-4 gap-y-8 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-3 gap-x-5 gap-y-8 pt-1">
                     {filteredVideos.slice(0, 6).map((video) => (
                       <VideoCard
                         key={video.id}
@@ -3820,7 +3834,7 @@ export default function App() {
 
                   {/* Remaining Videos below the Shorts shelf */}
                   {filteredVideos.length > 6 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-x-4 gap-y-8 pt-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-3 gap-x-5 gap-y-8 pt-2">
                       {filteredVideos.slice(6).map((video) => (
                         <VideoCard
                           key={video.id}
