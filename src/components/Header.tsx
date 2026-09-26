@@ -179,8 +179,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className={`w-full relative z-50 ${
-      isLight ? 'bg-white/95 text-slate-900 border-slate-200' : 'bg-slate-950/95 text-slate-100 border-slate-800/60'
-    } backdrop-blur-md transition-colors overflow-visible border-b`}>
+      isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-950 text-slate-100 border-slate-800/60'
+    } transition-colors overflow-visible border-b`}>
       <div className="flex items-center justify-between px-2 sm:px-4 lg:px-6 h-14 gap-1.5 sm:gap-4 max-w-full">
         
         {/* Full-width Mobile Search Bar when activated */}
