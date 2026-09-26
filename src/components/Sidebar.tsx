@@ -137,9 +137,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
-      className={`fixed lg:sticky top-14 left-0 h-[calc(100vh-56px)] ${
+      className={`fixed top-14 left-0 h-[calc(100vh-56px)] ${
         isLight ? 'bg-white text-slate-800 border-slate-200' : 'bg-slate-900 dark:bg-slate-950 text-slate-100 border-slate-800'
-      } border-r z-30 transition-all duration-200 ease-in-out overflow-y-auto flex flex-col ${
+      } border-r z-40 transition-all duration-200 ease-in-out overflow-y-auto flex flex-col ${
         isOpen ? 'w-60 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-18'
       }`}
     >
